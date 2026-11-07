@@ -248,7 +248,7 @@ small.role{color:var(--ink-2);font-size:11px}
         </dl>
         <h3>AI návrh – pravidla</h3>
         <ol class="rules">
-          <li>R1 kontrastní podkladová plocha pod textem</li>
+          <li>R1 barvy upravené přímo v grafice obalu (tmavší podklad pod světlým písmem, tmavší písmo na světlém), bez nalepených ploch</li>
           <li>R2 povinné údaje kontrast ≥ 7 : 1 (AAA)</li>
           <li>R3 x-výška povinných údajů ≥ 1,3 mm</li>
           <li>R4 tabulky a odstavce na výšku, bez otáčení</li>
@@ -566,55 +566,98 @@ function typeset(o,text,x0,width,fontPx,lh){
   for(const wd of words){const b=ALLERG.test(wd.replace(/^[(„"]+/,""));o.font=(b?"700 ":"400 ")+fontPx+"px "+FONT_UI;const tw=o.measureText(wd).width,sp=o.measureText(" ").width;
     if(lw+tw>width&&line.length){lines.push(line);line=[];lw=0;}line.push({wd,b,tw});lw+=tw+sp;}
   if(line.length)lines.push(line);return lines;}
-function recolor(o,box,fg,bg,P,T){
-  const [x0,y0,x1,y1]=box;const w=x1-x0,h=y1-y0;const im=o.getImageData(x0,y0,w,h),d=im.data;
-  const D=[fg[0]-bg[0],fg[1]-bg[1],fg[2]-bg[2]];const dd=D[0]*D[0]+D[1]*D[1]+D[2]*D[2]||1;
-  for(let i=0;i<d.length;i+=4){let t=((d[i]-bg[0])*D[0]+(d[i+1]-bg[1])*D[1]+(d[i+2]-bg[2])*D[2])/dd;t=Math.max(0,Math.min(1,(t-0.15)/0.7));
-    d[i]=P[0]+(T[0]-P[0])*t;d[i+1]=P[1]+(T[1]-P[1])*t;d[i+2]=P[2]+(T[2]-P[2])*t;}
-  const t=document.createElement("canvas");t.width=w;t.height=h;t.getContext("2d").putImageData(im,0,0);return t;}
+// --- pomocné funkce: stínování obalu, „tisk“ nové vrstvy, alfa znaků ---
+function shadeMap(base){ // jas obalu bez textu (blokové maximum + vyhlazení) → násobitel stínování
+  const w=base.width,h=base.height,B=8,sw=Math.ceil(w/B),sh=Math.ceil(h/B);const d=base.getContext("2d").getImageData(0,0,w,h).data;
+  const sm=new Float32Array(sw*sh);
+  for(let y=0;y<h;y++)for(let x=0;x<w;x++){const i=(y*w+x)*4,L=0.2126*d[i]+0.7152*d[i+1]+0.0722*d[i+2],k=((y/B)|0)*sw+((x/B)|0);if(L>sm[k])sm[k]=L;}
+  const t=document.createElement("canvas");t.width=sw;t.height=sh;const tx=t.getContext("2d");const im=tx.createImageData(sw,sh);
+  for(let k=0;k<sm.length;k++){im.data[k*4]=im.data[k*4+1]=im.data[k*4+2]=sm[k];im.data[k*4+3]=255;}tx.putImageData(im,0,0);
+  const u=document.createElement("canvas");u.width=w;u.height=h;const ux=u.getContext("2d",{willReadFrequently:true});
+  if(FILTER_OK)ux.filter="blur(3px)";ux.imageSmoothingQuality="high";ux.drawImage(t,0,0,w,h);
+  const ud=ux.getImageData(0,0,w,h).data;const L=new Float32Array(w*h);for(let k=0;k<L.length;k++)L[k]=ud[k*4];
+  return L;}
+function printLayer(o,layer,L,region){ // vrstvu nakreslí „potiskem“: barva × stínování podkladu
+  const [x0,y0,x1,y1]=region.map(Math.round),w=x1-x0,h=y1-y0;if(w<1||h<1)return;
+  const W=o.canvas.width;let ref=0;const vals=[];for(let y=y0;y<y1;y+=4)for(let x=x0;x<x1;x+=4)vals.push(L[y*W+x]);vals.sort((a,b)=>a-b);ref=vals[Math.floor(vals.length*0.95)]||255;
+  const a=o.getImageData(x0,y0,w,h),b=layer.getContext("2d").getImageData(x0,y0,w,h),ad=a.data,bd=b.data;
+  for(let y=0;y<h;y++)for(let x=0;x<w;x++){const i=(y*w+x)*4,al=bd[i+3]/255;if(!al)continue;const s=Math.max(0.58,Math.min(1.04,L[(y0+y)*W+x0+x]/ref));
+    for(let k=0;k<3;k++)ad[i+k]=ad[i+k]*(1-al)+bd[i+k]*s*al;}
+  o.putImageData(a,x0,y0);}
+function glyphAlpha(d,fg,bg){ // podíl barvy textu v pixelu (projekce na spojnici pozadí → text)
+  const D=[fg[0]-bg[0],fg[1]-bg[1],fg[2]-bg[2]],dd=D[0]*D[0]+D[1]*D[1]+D[2]*D[2]||1,n=d.length/4,t=new Float32Array(n);
+  for(let k=0;k<n;k++){const i=k*4;const v=((d[i]-bg[0])*D[0]+(d[i+1]-bg[1])*D[1]+(d[i+2]-bg[2])*D[2])/dd;t[k]=Math.max(0,Math.min(1,(v-0.2)/0.6));}
+  return t;}
+function bgStats(d,t){let n=0,m=[0,0,0],v=0;for(let k=0;k<t.length;k++)if(t[k]<0.05){const i=k*4;m[0]+=d[i];m[1]+=d[i+1];m[2]+=d[i+2];n++;}
+  if(!n)return {mean:[0,0,0],std:99};m=m.map(x=>x/n);for(let k=0;k<t.length;k++)if(t[k]<0.05){const i=k*4;v+=(d[i]-m[0])**2+(d[i+1]-m[1])**2+(d[i+2]-m[2])**2;}
+  return {mean:m,std:Math.sqrt(v/n/3)};}
+function newLayer(c){const l=document.createElement("canvas");l.width=c.width;l.height=c.height;return l;}
 async function redesignView(v,prodName){
   const base=await loadImg(v);const c=document.createElement("canvas");c.width=base.width;c.height=base.height;
   const o=c.getContext("2d",{willReadFrequently:true});o.drawImage(base,0,0);
   try{await document.fonts.load("700 20px \"Atkinson Hyperlegible\"");await document.fonts.load("400 20px \"Atkinson Hyperlegible\"");}catch(e){}
-  const ppm=v.pxmm,d=distOf(v.strana),plates=[],out=[];
-  const inPlate=e=>{const cx=(e.box[0]+e.box[2])/2,cy=(e.box[1]+e.box[3])/2;return plates.some(p=>cx>=p[0]&&cx<=p[2]&&cy>=p[1]&&cy<=p[3]);};
+  const ppm=v.pxmm,d=distOf(v.strana),used=[],out=[];const L=shadeMap(base);
+  const covered=e=>{const cx=(e.box[0]+e.box[2])/2,cy=(e.box[1]+e.box[3])/2;return used.some(p=>p.panel&&cx>=p[0]&&cx<=p[2]&&cy>=p[1]&&cy<=p[3]);};
+  const overlaps=(nb,self)=>v.elements.some(o2=>o2!==self&&!(o2.box[2]<nb[0]||o2.box[0]>nb[2]||o2.box[3]<nb[1]||o2.box[1]>nb[3]))||used.some(p=>!(p[2]<nb[0]||p[0]>nb[2]||p[3]<nb[1]||p[1]>nb[3]));
   const order=[...v.elements].sort((a,b)=>(b.role==="povinný"&&b.x)-(a.role==="povinný"&&a.x));
   for(const e of order){
-    if(inPlate(e))continue;
-    const s=scoreEl(e,d);
-    if(e.role==="značka"||(s.item>=0.7&&s.k0>=4.5&&!(e.role==="povinný"&&e.x&&e.h<1.3))){out.push({...e});continue;}
-    if(e.role==="povinný"&&e.x&&(e.full||e.text)&&(e.readable!==false)&&(!e.ocr||e.readable)){ // R2+R3+R4: přesazba povinného textu
-      const text=(e.full||e.text).replace(/\s+/g," ");let xmm=1.3;const pad=1.2*ppm;
-      let width=Math.max(e.box[2]-e.box[0],Math.min(45*ppm,c.width*0.8));let x0=Math.max(0,Math.min(e.box[0],c.width-width-2*pad));
+    if(covered(e))continue;
+    const s=scoreEl(e,d);const target=e.role==="povinný"?7:4.5;
+    if(e.role==="značka"||(s.item>=0.7&&s.k0>=target&&!(e.role==="povinný"&&e.x&&e.h<1.3))){out.push({...e});continue;}
+    if(e.role==="povinný"&&e.x&&(e.full||e.text)&&(!e.ocr||e.readable)){ // R2+R3+R4: přesazba na podkladu v barvě obalu
+      const text=(e.full||e.text).replace(/\s+/g," ");let xmm=1.3;const pad=1.4*ppm;
+      let width=Math.max(e.box[2]-e.box[0]-2*pad,Math.min(22*ppm,c.width*0.6));let x0=Math.max(0,Math.min(e.box[0],c.width-width-2*pad));
       let fpx,lh,lines,H;
-      for(;;){fpx=xmm*ppm/xRatio(o);lh=fpx*1.28;lines=typeset(o,text,x0+pad,width,fpx,lh);H=lines.length*lh+2*pad;if(H<=c.height*0.92||xmm<=1.2)break;xmm=1.2;}
-      let y0=Math.max(0,Math.min(e.box[1],c.height-H));
-      const PL=[251,248,242],INK=[22,22,22];o.fillStyle=hex(PL);roundRect(o,x0,y0,width+2*pad,H,Math.min(18,pad));o.fill();
-      o.fillStyle=hex(INK);o.textBaseline="alphabetic";
-      lines.forEach((ln,i)=>{let x=x0+pad;const y=y0+pad+lh*i+fpx*0.92;for(const t of ln){o.font=(t.b?"700 ":"400 ")+fpx+"px "+FONT_UI;o.fillText(t.wd,x,y);x+=t.tw+o.measureText(" ").width;}});
-      const box=[x0,y0,x0+width+2*pad,y0+H].map(Math.round);plates.push(box);
-      out.push({...e,h:xmm,x:true,fg:INK,bg:PL,box,ai:"přesazeno, x-výška "+num(xmm)+" mm, kontrast "+num(cr(INK,PL))+" : 1"});continue;}
-    // R1 (+R6): kontrastní plocha a přebarvení, u malého písma zvětšení
-    const darkText=lum(e.fg)<lum(e.bg);const P=darkText?[255,255,255]:[18,40,30],T=darkText?[18,18,18]:[255,255,255];
-    const bh=e.box[3]-e.box[1],pad=Math.max(3,bh*0.18);
+      for(;;){fpx=xmm*ppm/xRatio(o);lh=fpx*1.3;lines=typeset(o,text,x0+pad,width,fpx,lh);H=lines.length*lh+2*pad;if(H<=c.height*0.92||xmm<=1.2)break;xmm=1.2;}
+      const y0=Math.max(0,Math.min(e.box[1],c.height-H));
+      const light=lum(e.bg)>0.35;const PL=light?e.bg.map(x=>x+(255-x)*0.55):e.bg.map(x=>x*0.35);const INK=light?[24,22,20]:[252,250,245];
+      const lay=newLayer(c),lx=lay.getContext("2d");
+      lx.filter=FILTER_OK?`blur(${Math.max(1,0.35*ppm)}px)`:"none";lx.fillStyle=hex(PL);lx.fillRect(x0,y0,width+2*pad,H);lx.filter="none";
+      lx.fillStyle=hex(INK);lines.forEach((ln,i)=>{let x=x0+pad;const y=y0+pad+lh*i+fpx*0.92;for(const t of ln){lx.font=(t.b?"700 ":"400 ")+fpx+"px "+FONT_UI;lx.fillText(t.wd,x,y);x+=t.tw+lx.measureText(" ").width;}});
+      const box=[x0,y0,x0+width+2*pad,y0+H].map(Math.round);const pr=[box[0]-ppm,box[1]-ppm,box[2]+ppm,box[3]+ppm].map((q,i)=>Math.max(0,Math.min(i%2?c.height:c.width,q)));
+      printLayer(o,lay,L,pr);box.panel=true;used.push(box);
+      out.push({...e,h:xmm,x:true,fg:INK,bg:PL,box,ai:"přesazeno v barvě obalu, x-výška "+num(xmm)+" mm, kontrast "+num(cr(INK,PL))+" : 1"});continue;}
+    // R1: přebarvení písma přímo na obalu; když to nestačí, tónování podkladu do ztracena; u klidného pozadí zvětšení
+    const bh=e.box[3]-e.box[1],pad=Math.max(4,bh*0.35);
     const src=[e.box[0]-pad,e.box[1]-pad,e.box[2]+pad,e.box[3]+pad].map(Math.round);src[0]=Math.max(0,src[0]);src[1]=Math.max(0,src[1]);src[2]=Math.min(c.width,src[2]);src[3]=Math.min(c.height,src[3]);
-    const need=fS(e.h*(e.x?1.4:1),0.4,d)<1?Math.min(1.4,2.5*5*mar(0.4,d)/(e.h*(e.x?1.4:1))):1;let k=Math.max(1,need);
-    if(k>1){const cx=(src[0]+src[2])/2,cy=(src[1]+src[3])/2,hw=(src[2]-src[0])*k/2,hh=(src[3]-src[1])*k/2,nb=[cx-hw,cy-hh,cx+hw,cy+hh];
-      const hit=v.elements.some(o2=>o2!==e&&!(o2.box[2]<nb[0]||o2.box[0]>nb[2]||o2.box[3]<nb[1]||o2.box[1]>nb[3]))||plates.some(p=>!(p[2]<nb[0]||p[0]>nb[2]||p[3]<nb[1]||p[1]>nb[3]));
-      if(hit)k=1;}
-    const tile=recolor(o,src,e.fg,e.bg,P,T);const w=(src[2]-src[0])*k,h=(src[3]-src[1])*k;
-    let nx=(src[0]+src[2])/2-w/2,ny=(src[1]+src[3])/2-h/2;nx=Math.max(0,Math.min(c.width-w,nx));ny=Math.max(0,Math.min(c.height-h,ny));
-    o.save();roundRect(o,nx,ny,w,h,Math.min(10,h*0.2));o.clip();o.fillStyle=hex(P);o.fillRect(nx,ny,w,h);o.imageSmoothingQuality="high";o.drawImage(tile,nx,ny,w,h);o.restore();
-    const box=[nx,ny,nx+w,ny+h].map(Math.round);plates.push(box);
-    out.push({...e,h:+(e.h*k).toFixed(2),fg:T,bg:P,box,ai:"kontrastní plocha"+(k>1?", zvětšeno ×"+num(k,2):"")});}
-  // R7: QR na přední straně
+    const w=src[2]-src[0],h=src[3]-src[1];const img=o.getImageData(src[0],src[1],w,h),dd=img.data;const t=glyphAlpha(dd,e.fg,e.bg);const st=bgStats(dd,t);
+    let bg=st.mean,T=suggestColor(e.fg,bg,target),ratio=null;
+    if(cr(T,bg)<target){ // podklad je středně tmavý: ztmavit (pro světlé písmo) nebo zesvětlit (pro tmavé) do ztracena
+      const toLight=lum(e.fg)>lum(bg);T=toLight?[255,255,255]:[18,18,18];
+      for(let f=0.95;f>=0.2;f-=0.05){const nb=toLight?bg.map(x=>x*f):bg.map(x=>255-(255-x)*f);if(cr(T,nb)>=target){ratio=f;break;}}if(ratio===null)ratio=0.2;}
+    const cx=w/2,cy=h/2,rx=w/2,ry=h/2;
+    for(let y=0;y<h;y++)for(let x=0;x<w;x++){const k=y*w+x,i=k*4;
+      if(ratio!==null){const dx=(x-cx)/rx,dy=(y-cy)/ry,r=Math.sqrt(dx*dx*0.6+dy*dy*0.6);const m=Math.max(0,Math.min(1,(1.0-r)/0.25));
+        if(m>0){const toLight=T[0]>128;for(let q=0;q<3;q++){const nv=toLight?dd[i+q]*ratio:255-(255-dd[i+q])*ratio;dd[i+q]=dd[i+q]*(1-m)+nv*m;}}}
+      const a=t[k];if(a>0)for(let q=0;q<3;q++)dd[i+q]=dd[i+q]*(1-a)+T[q]*a;}
+    let k=1;const need=fS(e.h*(e.x?1.4:1),0.4,d)<1?Math.min(1.35,2.5*5*mar(0.4,d)/(e.h*(e.x?1.4:1))):1;
+    let box=e.box.slice();
+    if(need>1.03&&st.std<16&&ratio===null){const nb=[e.box[0]-(e.box[2]-e.box[0])*(need-1)/2,e.box[1]-(e.box[3]-e.box[1])*(need-1)/2,e.box[2]+(e.box[2]-e.box[0])*(need-1)/2,e.box[3]+(e.box[3]-e.box[1])*(need-1)/2];
+      if(!overlaps(nb,e)&&nb[0]>=0&&nb[1]>=0&&nb[2]<=c.width&&nb[3]<=c.height){k=need;box=nb.map(Math.round);}}
+    if(k>1){ // smazat původní znaky barvou pozadí a vložit zvětšené
+      const glyph=document.createElement("canvas");glyph.width=w;glyph.height=h;const gx=glyph.getContext("2d");const gi=gx.createImageData(w,h);
+      for(let q=0;q<t.length;q++){gi.data[q*4]=T[0];gi.data[q*4+1]=T[1];gi.data[q*4+2]=T[2];gi.data[q*4+3]=Math.round(t[q]*255);
+        const i=q*4,a=Math.min(1,t[q]*1.6);for(let z=0;z<3;z++)dd[i+z]=dd[i+z]*(1-a)+bg[z]*a;}
+      gx.putImageData(gi,0,0);o.putImageData(img,src[0],src[1]);
+      o.imageSmoothingQuality="high";o.drawImage(glyph,src[0]+w/2-w*k/2,src[1]+h/2-h*k/2,w*k,h*k);}
+    else o.putImageData(img,src[0],src[1]);
+    used.push(box);
+    out.push({...e,h:+(e.h*k).toFixed(2),fg:T,bg:ratio!==null?(T[0]>128?bg.map(x=>x*ratio):bg.map(x=>255-(255-x)*ratio)):bg,box,
+      ai:(ratio!==null?"tmavší/světlejší podklad do ztracena, ":"")+"nová barva písma"+(k>1?", zvětšeno ×"+num(k,2):"")});}
+  // R7: QR potištěný na nejklidnější světlé místo obalu (roh)
   if(v.strana==="přední"&&typeof qrcode==="function"){
     const q=qrcode(0,"M");q.addData(location.origin+location.pathname+"#pristupna-etiketa");q.make();const n=q.getModuleCount();
-    const S2=Math.round(16*ppm),mx=Math.round(1.5*ppm),capH=Math.round(5.5*ppm),x0=mx,y0=c.height-S2-capH-mx;
-    o.fillStyle="#fff";roundRect(o,x0-6,y0-6,S2+12,S2+capH+12,10);o.fill();o.strokeStyle="#111";o.lineWidth=Math.max(2,ppm*0.4);o.stroke();
-    const cell=S2/n;o.fillStyle="#111";for(let r=0;r<n;r++)for(let cc=0;cc<n;cc++)if(q.isDark(r,cc))o.fillRect(x0+cc*cell,y0+r*cell,Math.ceil(cell),Math.ceil(cell));
-    const fpx=2.6*ppm/0.72;o.font="700 "+fpx+"px "+FONT_UI;o.textAlign="center";o.fillText("ČITELNÁ ETIKETA",x0+S2/2,y0+S2+capH*0.75,S2+8);o.textAlign="start";
-    out.push({text:"QR: čitelná etiketa",role:"tvrzení",x:false,h:2.6,fg:[17,17,17],bg:[255,255,255],box:[x0,y0+S2,x0+S2,y0+S2+capH],ai:"R7 – QR s přístupnou verzí"});}
+    const S2=Math.round(13*ppm),capH=Math.round(5.5*ppm),mg=Math.round(2*ppm);
+    const ix=Math.round(c.width*0.1),iy=Math.round(c.height*0.08);const cands=[];for(const fy of [0.85,0.7,0.55,0.4,0.25,0.12])for(const fx of [0,1])cands.push([fx?c.width-S2-ix:ix,Math.round(fy*(c.height-S2-capH-iy))]);
+    let best=null;for(const [x,y] of cands){const r=[x,y,x+S2,y+S2+capH];if(used.some(p=>!(p[2]<r[0]||p[0]>r[2]||p[3]<r[1]||p[1]>r[3]))||v.elements.some(o2=>!(o2.box[2]<r[0]||o2.box[0]>r[2]||o2.box[3]<r[1]||o2.box[1]>r[3])))continue;
+      const dd=o.getImageData(x,y,S2,S2+capH).data;let m=0,vv=0,nn=dd.length/4;for(let i=0;i<dd.length;i+=4)m+=(dd[i]+dd[i+1]+dd[i+2])/3;m/=nn;for(let i=0;i<dd.length;i+=4)vv+=((dd[i]+dd[i+1]+dd[i+2])/3-m)**2;const sc=m-Math.sqrt(vv/nn)*2;
+      if(!best||sc>best.sc)best={x,y,sc,m};}
+    if(best){const {x,y}=best;const lay=newLayer(c),lx=lay.getContext("2d");const tag=best.m<200;
+      if(tag){lx.fillStyle="#fbfaf6";roundRect(lx,x-0.8*ppm,y-0.8*ppm,S2+1.6*ppm,S2+capH+1.2*ppm,0.8*ppm);lx.fill();}
+      const ink="#1d1b1a",cell=S2/n;lx.fillStyle=ink;for(let r=0;r<n;r++)for(let cc=0;cc<n;cc++)if(q.isDark(r,cc))lx.fillRect(x+cc*cell,y+r*cell,Math.ceil(cell),Math.ceil(cell));
+      const fpx=2.6*ppm/0.72;lx.font="700 "+fpx+"px "+FONT_UI;lx.textAlign="center";lx.fillText("ČITELNÁ ETIKETA",x+S2/2,y+S2+capH*0.75,S2+0.6*ppm);
+      printLayer(o,lay,L,[x-ppm,y-ppm,x+S2+ppm,y+S2+capH+ppm].map((q2,i)=>Math.max(0,Math.min(i%2?c.height:c.width,Math.round(q2)))));
+      out.push({text:"QR: čitelná etiketa",role:"tvrzení",x:false,h:2.6,fg:[29,27,26],bg:tag?[251,250,246]:[best.m,best.m,best.m],box:[x,y+S2,x+S2,y+S2+capH],ai:"R7 – QR potištěný na obal"});}}
   return {canvas:c,elements:out};}
 async function makeRedesign(prod){
   const name=prod+" – AI návrh";
