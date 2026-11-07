@@ -1,0 +1,770 @@
+<!doctype html>
+<html lang="cs">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>LabelSight Preflight</title>
+<meta name="description" content="Prototyp nástroje pro kontrolu čitelnosti a přístupnosti obalů potravin – případová studie Produktový management.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 32 32%22%3E%3Crect width=%2232%22 height=%2232%22 rx=%226%22 fill=%22%23b5176b%22/%3E%3Ccircle cx=%2216%22 cy=%2216%22 r=%227%22 fill=%22none%22 stroke=%22white%22 stroke-width=%223%22/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&family=IBM+Plex+Mono:wght@400;600&display=swap">
+<style>
+/* Rozvržení: nástroj pro tiskovou kontrolu – vlevo náhled obalu se značkami jako na korektuře, vpravo protokol měření */
+:root{
+  --paper:#f4f5f7; --sheet:#ffffff; --ink:#15171c; --ink-2:#4a4f5a; --line:#d9dce2;
+  --proof:#b5176b; --proof-soft:#fbe7f1;
+  --ok:#0f7a2e; --ok-bg:#e3f4e8; --warn:#8a5a00; --warn-bg:#fdf1d6; --bad:#b42318; --bad-bg:#fde4e1;
+  --f-ui:"Atkinson Hyperlegible", "Segoe UI", system-ui, sans-serif;
+  --f-num:"IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --paper:#121419; --sheet:#1b1e25; --ink:#eceef2; --ink-2:#a8aebb; --line:#2f343e;
+  --proof:#ff6fb0; --proof-soft:#3a1a2b;
+  --ok:#5fd17f; --ok-bg:#16301f; --warn:#f2c35b; --warn-bg:#352a12; --bad:#ff8a7a; --bad-bg:#3b1a17; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --paper:#121419; --sheet:#1b1e25; --ink:#eceef2; --ink-2:#a8aebb; --line:#2f343e;
+  --proof:#ff6fb0; --proof-soft:#3a1a2b;
+  --ok:#5fd17f; --ok-bg:#16301f; --warn:#f2c35b; --warn-bg:#352a12; --bad:#ff8a7a; --bad-bg:#3b1a17; color-scheme:dark}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{background:var(--paper);color:var(--ink);font-family:var(--f-ui);font-size:15px;line-height:1.5;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:20px 40px}
+.wrap{max-width:1280px;margin:0 auto;display:flex;flex-direction:column;gap:18px}
+header{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:12px}
+h1{font-size:26px;margin:0;letter-spacing:-.01em;text-wrap:balance}
+h1 small{display:block;font-size:13px;font-weight:400;color:var(--ink-2);letter-spacing:.06em;text-transform:uppercase}
+h2{font-size:15px;margin:0;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-2)}
+.lead{margin:4px 0 0;color:var(--ink-2);max-width:68ch}
+.tabs{display:flex;flex-wrap:wrap;gap:6px}
+button,select,input{font:inherit;color:inherit}
+.tab,.chip,.btn{border:1px solid var(--line);background:var(--sheet);border-radius:6px;padding:6px 11px;cursor:pointer}
+.tab[aria-pressed="true"],.chip[aria-pressed="true"]{border-color:var(--proof);background:var(--proof-soft);color:var(--ink);font-weight:700}
+.btn.primary{background:var(--proof);border-color:var(--proof);color:#fff;font-weight:700}
+:focus-visible{outline:3px solid var(--proof);outline-offset:2px}
+.grid{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);gap:18px;align-items:start}
+@media (max-width:900px){.grid{grid-template-columns:minmax(0,1fr)}}
+.panel{background:var(--sheet);border:1px solid var(--line);border-radius:8px;padding:14px;display:flex;flex-direction:column;gap:12px;min-width:0}
+.viewer{position:sticky;top:calc(env(safe-area-inset-top,0px) + 8px)}
+@media (max-width:900px){.viewer{position:static}}
+.stage{width:100%;display:grid;place-items:center;background:repeating-conic-gradient(var(--line) 0 25%,var(--sheet) 0 50%) 0 0/16px 16px;border-radius:4px;overflow:hidden;padding:8px}
+.frame{position:relative;max-width:100%;touch-action:none}
+#cv{display:block;max-width:100%;max-height:72vh;width:auto;height:auto}
+#ov{position:absolute;inset:0;width:100%;height:100%;cursor:crosshair}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.hint{font-size:13px;color:var(--ink-2);margin:0}
+.scores{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+@media (max-width:480px){.scores{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.score{border:1px solid var(--line);border-radius:6px;padding:8px 10px;display:flex;flex-direction:column;gap:2px}
+.score b{font-family:var(--f-num);font-size:24px;font-variant-numeric:tabular-nums}
+.score span{font-size:12px;color:var(--ink-2);letter-spacing:.04em;text-transform:uppercase}
+.score.total{border-color:var(--proof);border-width:2px}
+.pill{display:inline-flex;align-items:center;gap:4px;font-size:12px;font-weight:700;border-radius:999px;padding:1px 8px;white-space:nowrap}
+.pill.ok{background:var(--ok-bg);color:var(--ok)} .pill.warn{background:var(--warn-bg);color:var(--warn)} .pill.bad{background:var(--bad-bg);color:var(--bad)}
+.tablewrap{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th,td{padding:5px 6px;border-bottom:1px solid var(--line);text-align:left;vertical-align:middle}
+th{font-size:11px;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-2);font-weight:700;white-space:nowrap}
+td.n{font-family:var(--f-num);font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap}
+tr.el{cursor:pointer} tr.el[aria-selected="true"] td{background:var(--proof-soft)}
+.cell{display:inline-block;min-width:34px;text-align:center;border-radius:4px;padding:1px 4px;font-family:var(--f-num);font-size:12px}
+.cell.ok{background:var(--ok-bg);color:var(--ok)} .cell.warn{background:var(--warn-bg);color:var(--warn)} .cell.bad{background:var(--bad-bg);color:var(--bad)}
+.no{display:inline-grid;place-items:center;width:22px;height:22px;border-radius:50%;font-size:12px;font-weight:700;color:#fff}
+.no.ok{background:#1d8a3a} .no.warn{background:#c98a00} .no.bad{background:#c4321f}
+.detail{border-left:3px solid var(--proof);padding:4px 0 4px 12px;display:flex;flex-direction:column;gap:6px}
+.sw{display:inline-block;width:18px;height:18px;border-radius:3px;border:1px solid var(--line);vertical-align:-4px;margin-right:4px}
+.reco{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:4px}
+.comply{display:flex;flex-direction:column;gap:6px;margin:0;padding:0;list-style:none}
+.comply li{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:center;border-bottom:1px solid var(--line);padding-bottom:6px}
+.comply small{color:var(--ink-2)}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:6px;overflow:hidden}
+.seg button{border:0;background:transparent;padding:3px 8px;font-size:12px;cursor:pointer}
+.seg button[aria-pressed="true"].ok{background:var(--ok-bg);color:var(--ok);font-weight:700}
+.seg button[aria-pressed="true"].warn{background:var(--warn-bg);color:var(--warn);font-weight:700}
+.seg button[aria-pressed="true"].bad{background:var(--bad-bg);color:var(--bad);font-weight:700}
+.form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.form label{display:flex;flex-direction:column;gap:2px;font-size:12px;color:var(--ink-2)}
+.form input,.form select{border:1px solid var(--line);background:var(--paper);border-radius:5px;padding:5px 7px;color:var(--ink)}
+.form .full{grid-column:1/-1}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.compare{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:6px 10px;align-items:center;font-size:13px}
+.bar{height:10px;border-radius:5px;background:var(--line);overflow:hidden}
+.bar i{display:block;height:100%;background:var(--proof)}
+.mono{font-family:var(--f-num);font-variant-numeric:tabular-nums}
+details summary{cursor:pointer;color:var(--ink-2)}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+.col{display:flex;flex-direction:column;gap:18px;min-width:0}
+.steps{display:flex;flex-direction:column;gap:10px}
+.progress{height:8px;border-radius:4px;background:var(--line);overflow:hidden}.progress i{display:block;height:100%;width:0;background:var(--proof);transition:width .2s}
+.tab.prod b{font-family:var(--f-num)} .tab.prod .mono{color:var(--ink-2);font-size:13px;margin-left:4px}
+.btn.small{padding:3px 9px;font-size:13px}
+.btn:disabled{opacity:.55;cursor:default}
+input.num{width:90px;border:1px solid var(--line);border-radius:5px;padding:3px 6px;background:var(--paper)}
+small.role{color:var(--ink-2);font-size:11px}
+.compare .cur{font-weight:700}
+.legend .lgrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px}
+@media (max-width:900px){.legend .lgrid{grid-template-columns:minmax(0,1fr)}}
+.legend h3{font-size:14px;margin:4px 0 6px}
+.legend dl{margin:0;display:flex;flex-direction:column;gap:2px;font-size:13px}
+.legend dt{font-weight:700} .legend dd{margin:0 0 6px;color:var(--ink-2)}
+.bands{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:4px;font-size:13px}
+.rules{margin:0;padding-left:18px;font-size:13px;color:var(--ink-2);display:flex;flex-direction:column;gap:2px}
+.foot{text-align:center}
+</style>
+
+</head>
+<body>
+
+<div class="wrap">
+  <header>
+    <div>
+      <h1><small>Prototyp · případová studie Produktový management · Sam Hlaváčik</small>LabelSight Preflight</h1>
+      <p class="lead">Kontrola čitelnosti, přístupnosti a povinných údajů na obalu potraviny. Vyberte ukázkový obal nebo nahrajte fotografii libovolného jiného obalu – aplikace v prohlížeči přečte text (OCR), změří kontrast a výšku písma, nasimuluje 7 zrakových vad a navrhne upravený obal.</p>
+    </div>
+    <div class="row">
+      <button class="btn primary" id="open-up">+ Analyzovat jiný obal</button>
+    </div>
+  </header>
+
+  <section class="panel" id="up" hidden aria-label="Nahrání obalu">
+    <div class="row" style="justify-content:space-between"><h2>Nový obal</h2><button class="btn" id="up-close">Zavřít</button></div>
+    <div class="steps">
+      <div class="form">
+        <label class="full">1 · Fotografie strany obalu (JPG/PNG, obal vyfocený zpříma, co nejostřeji)<input id="up-file" type="file" accept="image/*"></label>
+        <label>2 · Výrobek<select id="up-prod"></select></label>
+        <label>Název nového výrobku<input id="up-name" placeholder="např. Ovesné vločky XY 500 g"></label>
+        <label>3 · Strana obalu<select id="up-side"><option value="přední">přední (čte se z regálu, 50 cm)</option><option value="bok">boční (v ruce, 40 cm)</option><option value="zadní">zadní (v ruce, 40 cm)</option></select></label>
+        <label>4 · Skutečná výška obalu (mm)<input id="up-mm" type="number" min="20" max="1000" step="1" value="250"></label>
+      </div>
+      <p class="hint">Měřítko: aplikace předpokládá, že obal vyplňuje fotografii na výšku. Pokud je kolem obalu okolí, ořízněte fotku nebo po analýze použijte <b>Kalibrovat měřítko</b> (táhněte přes známý rozměr, např. výšku čárového kódu EAN-13 ≈ 25,9 mm při 100 %). Vše se počítá jen ve vašem prohlížeči, fotografie se nikam neodesílá.</p>
+      <div class="row"><button class="btn primary" id="up-go" disabled>Spustit analýzu</button><span class="hint" id="up-msg"></span></div>
+      <div class="progress" id="up-prog" hidden><i></i></div>
+    </div>
+  </section>
+
+  <nav class="prodbar" aria-label="Výrobek">
+    <div class="tabs" id="prods"></div>
+  </nav>
+  <div class="row" style="justify-content:space-between">
+    <nav class="tabs" id="sides" aria-label="Strana obalu"></nav>
+    <div class="row"><button class="btn" id="ai-btn"></button></div>
+  </div>
+
+  <div class="grid">
+    <section class="panel viewer" aria-label="Náhled obalu">
+      <div class="chips" id="conds" role="group" aria-label="Simulace vidění"></div>
+      <div class="stage" id="stage">
+        <div class="frame"><canvas id="cv"></canvas>
+        <canvas id="ov" aria-label="Náhled obalu se značkami měřených prvků"></canvas></div>
+      </div>
+      <p class="hint" id="simnote"></p>
+      <div class="row">
+        <label class="hint" for="pxmm">Měřítko</label>
+        <input id="pxmm" class="mono num" type="number" step="0.01" min="0.1">
+        <span class="hint">px / mm · vzdálenost čtení <span id="dist" class="mono"></span> mm</span>
+        <button class="btn small" id="cal-btn">Kalibrovat měřítko</button>
+      </div>
+      <div class="row" id="cal-form" hidden>
+        <span class="hint" id="cal-info"></span>
+        <label class="hint">Skutečná délka (mm) <input id="cal-mm" class="mono num" type="number" min="1" step="0.1"></label>
+        <button class="btn primary small" id="cal-ok">Použít</button><button class="btn small" id="cal-x">Zrušit</button>
+      </div>
+    </section>
+
+    <div class="col">
+      <section class="panel" aria-label="Skóre obalu">
+        <div class="row" style="justify-content:space-between"><h2 id="prodname">Skóre obalu</h2><span id="band"></span></div>
+        <div class="scores">
+          <div class="score"><span>Check</span><b id="sc-check">–</b></div>
+          <div class="score"><span>Vision</span><b id="sc-vision">–</b></div>
+          <div class="score"><span>Comply</span><b id="sc-comply">–</b></div>
+          <div class="score total"><span>LabelSight</span><b id="sc-total">–</b></div>
+        </div>
+        <p class="hint">Skóre = 0,30 · Check + 0,50 · Vision + 0,20 · Comply ze všech změřených prvků výrobku (všechny strany). Význam viz Legenda níže.</p>
+        <div class="compare" id="compare"></div>
+      </section>
+
+      <section class="panel" aria-label="Měřené prvky">
+        <h2>Prvky na této straně</h2>
+        <p class="hint">Klepnutím na řádek nebo rámeček zobrazíte detail a doporučení. Tažením myši v náhledu přidáte další prvek.</p>
+        <div class="tablewrap"><table>
+          <thead><tr id="thead"></tr></thead>
+          <tbody id="tbody"></tbody>
+        </table></div>
+        <div id="detail" class="detail" hidden></div>
+        <div id="newform" class="panel" hidden style="padding:10px">
+          <strong>Nový prvek</strong>
+          <div class="form">
+            <label class="full">Název prvku<input id="nf-text" value="Nový text"></label>
+            <label>Role<select id="nf-role">
+              <option value="název">název výrobku</option><option value="varianta">varianta / příchuť</option>
+              <option value="množství">čisté množství</option><option value="povinný">povinný údaj</option>
+              <option value="tvrzení">tvrzení</option><option value="značka">značka</option></select></label>
+            <label>Výška písma (mm)<input id="nf-h" type="number" step="0.05" min="0.1"></label>
+            <label class="full" style="flex-direction:row;align-items:center;gap:6px;color:var(--ink)"><input id="nf-x" type="checkbox"> odstavcový text – měřit x-výšku (výška malých písmen)</label>
+          </div>
+          <div class="row"><button class="btn primary" id="nf-add">Přidat prvek</button><button class="btn" id="nf-cancel">Zrušit</button><span class="hint" id="nf-info"></span></div>
+        </div>
+      </section>
+
+      <section class="panel" aria-label="Povinné údaje">
+        <h2>Comply · povinné údaje</h2>
+        <p class="hint" id="comply-note"></p>
+        <ul class="comply" id="comply"></ul>
+      </section>
+    </div>
+  </div>
+
+  <section class="panel legend" id="legend" aria-label="Legenda">
+    <h2>Legenda · co který údaj znamená</h2>
+    <div class="lgrid">
+      <div>
+        <h3>Moduly a skóre</h3>
+        <dl>
+          <dt>Check</dt><dd>Čitelnost pro člověka bez zrakové vady: kontrast textu vůči pozadí a výška písma vzhledem ke vzdálenosti čtení (přední strana 50 cm v regálu, ostatní strany 40 cm v ruce).</dd>
+          <dt>Vision</dt><dd>Průměr čitelnosti přes 7 simulovaných zrakových vad (sloupce tabulky prvků).</dd>
+          <dt>Comply</dt><dd>Povinné údaje podle nařízení (EU) č. 1169/2011: OK = 1, riziko = 0,5, chyba = 0.</dd>
+          <dt>LabelSight</dt><dd>Celkové skóre 0–100 % = 0,30 · Check + 0,50 · Vision + 0,20 · Comply. Prvky se váží podle role (název, varianta, množství, povinný údaj ×2; značka ×1,5; tvrzení ×1).</dd>
+          <dt>Prvek</dt><dd>Barva rámečku a čísla = 0,3 · Check + 0,7 · Vision daného prvku.</dd>
+        </dl>
+        <h3>Barvy hodnocení</h3>
+        <ul class="bands">
+          <li><span class="cell ok">≥ 70</span> v pořádku</li>
+          <li><span class="cell warn">50–69</span> varování – doporučena úprava</li>
+          <li><span class="cell bad">&lt; 50</span> chyba – pro část zákazníků nečitelné</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Simulované zrakové vady</h3>
+        <dl id="cond-legend"></dl>
+      </div>
+      <div>
+        <h3>Pojmy v tabulce</h3>
+        <dl>
+          <dt>Výška</dt><dd>Výška písma v mm. Bez značky = výška verzálek (velkých písmen), u nadpisů a log.</dd>
+          <dt>„x“</dt><dd>x-výška = výška malých písmen bez dotahů. Zákonné minimum pro povinné údaje je 1,2 mm (čl. 13 nařízení 1169/2011), u malých obalů 0,9 mm. Pro výpočet se násobí 1,4.</dd>
+          <dt>Kontrast</dt><dd>Poměr jasů textu a pozadí podle WCAG: K = (L₁ + 0,05) / (L₂ + 0,05). Doporučené minimum 4,5 : 1, úroveň AAA 7 : 1.</dd>
+          <dt>px / mm</dt><dd>Měřítko fotografie – kolik obrazových bodů připadá na 1 mm obalu. Určuje přepočet na skutečnou výšku písma.</dd>
+          <dt>Role</dt><dd>název · varianta · množství · povinný údaj · značka · tvrzení (marketingové sdělení).</dd>
+        </dl>
+        <h3>AI návrh – pravidla</h3>
+        <ol class="rules">
+          <li>R1 kontrastní podkladová plocha pod textem</li>
+          <li>R2 povinné údaje kontrast ≥ 7 : 1 (AAA)</li>
+          <li>R3 x-výška povinných údajů ≥ 1,3 mm</li>
+          <li>R4 tabulky a odstavce na výšku, bez otáčení</li>
+          <li>R5 na hlavní ploše jen jazyky trhu (CZ/SK)</li>
+          <li>R6 množství a český název na klidném pozadí přední strany</li>
+          <li>R7 QR kód s přístupnou verzí etikety (zvětšení, hlasové čtení)</li>
+        </ol>
+      </div>
+    </div>
+  </section>
+
+  <details class="panel">
+    <summary>Jak prototyp počítá a omezení</summary>
+    <p class="hint">Barvu textu a pozadí určuje shlukování barev (k-means, 2 shluky; pozadí = shluk převažující na okraji výřezu). Výšku písma měří spojité komponenty glyfů. Kontrastní složka f<sub>K</sub> = ln K / ln 4,5, velikostní složka porovnává výšku písma s prahem rozpoznání 5 · MAR pro danou zrakovou ostrost (plné skóre od 2,5násobku prahu). U nahraného obalu text čte OCR Tesseract (čeština + angličtina) přímo v prohlížeči a role prvků se odhadují podle klíčových slov – ověřte je v detailu prvku. AI návrh u nahraného obalu upravuje kontrast a zvětšuje povinné údaje automaticky z textu OCR; u ukázkových obalů A a B je návrh připravený podrobnějším Python prototypem. Ostrá verze by místo fotografie četla tiskové PDF s přesnými rozměry.</p>
+  </details>
+  <p class="hint foot">LabelSight Preflight je fiktivní produkt pro účely případové studie (VŠTE, Produktový management, 2026). Ukázkové fotografie: Emco Mysli na zdraví Křupavé jahody a mandle 750 g (A) a Bona Vita Müsli Hazelnuts Crunchy 375 g (B), foceno v obchodě.</p>
+</div>
+
+<script src="tesseract.min.js"></script>
+<script src="qrcode.js"></script>
+<script>
+"use strict";
+// ================= LabelSight Preflight – statická verze (GitHub Pages) =================
+const COND = [
+  {id:"Presbyopie", short:"Pres", label:"Presbyopie", visus:0.4, contrast:1, tint:null, cvd:null, field:null,
+   desc:"Vetchozrakost – oko po 45. roce hůř zaostří na blízko. Zraková ostrost (visus) 0,4."},
+  {id:"Šedý zákal", short:"Kat", label:"Šedý zákal", visus:0.3, contrast:0.55, tint:[1,0.92,0.70], cvd:null, field:null,
+   desc:"Katarakta – zakalená čočka: visus 0,3, kontrast × 0,55, žlutohnědý závoj."},
+  {id:"VPMD", short:"VPMD", label:"Makulární degenerace", visus:0.15, contrast:0.75, tint:null, cvd:null, field:"central",
+   desc:"Věkem podmíněná makulární degenerace – výpadek ve středu zorného pole, visus 0,15."},
+  {id:"Glaukom", short:"Glau", label:"Glaukom", visus:0.6, contrast:0.75, tint:null, cvd:null, field:"peripheral",
+   desc:"Zelený zákal – zúžené zorné pole („tunelové vidění“), visus 0,6, nižší kontrast."},
+  {id:"Deuteranopie", short:"Deut", label:"Deuteranopie", visus:1, contrast:1, tint:null, cvd:"deutan", field:null,
+   desc:"Porucha vnímání zelené (nejčastější barvoslepost, cca 6 % mužů). Model Machado et al. 2009."},
+  {id:"Protanopie", short:"Prot", label:"Protanopie", visus:1, contrast:1, tint:null, cvd:"protan", field:null,
+   desc:"Porucha vnímání červené (cca 2 % mužů) – červená působí tmavě. Model Machado et al. 2009."},
+  {id:"Diabetická retinopatie", short:"DR", label:"Diabetická retinopatie", visus:0.4, contrast:0.7, tint:null, cvd:null, field:"patches",
+   desc:"Poškození sítnice při cukrovce – rozptýlené tmavé skvrny, visus 0,4, kontrast × 0,7."},
+];
+const CVD = {
+  deutan:[[0.367322,0.860646,-0.227968],[0.280085,0.672501,0.047413],[-0.011820,0.042940,0.968881]],
+  protan:[[0.152286,1.052583,-0.204868],[0.114503,0.786281,0.099216],[-0.003882,-0.048116,1.051998]],
+};
+const ROLE_W={"název":2,"varianta":2,"množství":2,"povinný":2,"značka":1.5,"tvrzení":1};
+const LIN=new Float32Array(256); for(let i=0;i<256;i++){const c=i/255;LIN[i]=c<=0.04045?c/12.92:Math.pow((c+0.055)/1.055,2.4);}
+const toLin=c=>{c=Math.max(0,Math.min(255,c))/255;return c<=0.04045?c/12.92:Math.pow((c+0.055)/1.055,2.4)};
+const toSrgb=c=>{c=Math.max(0,Math.min(1,c));return 255*(c<=0.0031308?12.92*c:1.055*Math.pow(c,1/2.4)-0.055)};
+const lum=rgb=>{const [r,g,b]=rgb.map(toLin);return 0.2126*r+0.7152*g+0.0722*b};
+const cr=(a,b)=>{const l1=lum(a),l2=lum(b);return (Math.max(l1,l2)+0.05)/(Math.min(l1,l2)+0.05)};
+function ctransLin(lin,c){let [r,g,b]=lin;
+  if(c.cvd){const m=CVD[c.cvd];[r,g,b]=[m[0][0]*r+m[0][1]*g+m[0][2]*b,m[1][0]*r+m[1][1]*g+m[1][2]*b,m[2][0]*r+m[2][1]*g+m[2][2]*b];}
+  if(c.tint){r*=c.tint[0];g*=c.tint[1];b*=c.tint[2];}
+  if(c.contrast<1){const k=c.contrast,m=0.45,o=0.04*(1-k);r=m+(r-m)*k+o;g=m+(g-m)*k+o;b=m+(b-m)*k+o;}
+  return [r,g,b];}
+const ctrans=(rgb,c)=>ctransLin(rgb.map(toLin),c).map(toSrgb);
+const mar=(visus,d)=>d*Math.tan(Math.PI/180/60)/visus;
+const fK=k=>Math.max(0,Math.min(1,Math.log(k)/Math.log(4.5)));
+const fS=(h,visus,d)=>Math.max(0,Math.min(1,(h/(5*mar(visus,d))-1)/1.5));
+const distOf=strana=>strana==="přední"?500:400;
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const num=(v,d=1)=>v.toFixed(d).replace(".",",");
+
+function scoreEl(e,d){
+  const heff=e.h*(e.x?1.4:1);
+  const k0=cr(e.fg,e.bg);
+  const out={k0,check:fK(k0)*fS(heff,1,d),cond:{}};
+  let s=0;
+  for(const c of COND){const k=cr(ctrans(e.fg,c),ctrans(e.bg,c));const v=fK(k)*fS(heff,c.visus,d);out.cond[c.id]={k,v};s+=v;}
+  out.vision=s/COND.length; out.item=0.3*out.check+0.7*out.vision; return out;}
+const band=v=>v>=0.7?["ok","v pořádku"]:v>=0.5?["warn","varování"]:["bad","chyba"];
+const pct=v=>Math.round(v*100);
+const hex=rgb=>"#"+rgb.map(v=>Math.round(Math.max(0,Math.min(255,v))).toString(16).padStart(2,"0")).join("");
+function suggestColor(fg,bg,target){
+  const toward=lum(bg)>0.18?[20,20,20]:[255,255,255];
+  for(let t=0;t<=1.0001;t+=0.02){const c=fg.map((v,i)=>v+(toward[i]-v)*t);if(cr(c,bg)>=target)return c;}
+  return toward;}
+
+// ================= stav =================
+let DATA=null;
+const S={product:null,view:null,cond:"none",sel:null,comply:{},custom:0,cal:false};
+const viewById=id=>DATA.views.find(v=>v.id===id);
+const prodByName=n=>DATA.products.find(p=>p.name===n);
+const viewsOf=prod=>DATA.views.filter(v=>v.product===prod);
+
+function productRows(prod){
+  const rows=[];
+  for(const v of viewsOf(prod)) for(const e of v.elements) rows.push({e,d:distOf(v.strana)});
+  for(const e of (DATA.extra[prod]||[])) rows.push({e,d:distOf(e.strana)});
+  return rows;}
+function productScore(prod){
+  const rows=productRows(prod); if(!rows.length) return null;
+  let W=0,ch=0,vi=0;
+  for(const {e,d} of rows){const s=scoreEl(e,d),w=ROLE_W[e.role]||1;W+=w;ch+=w*s.check;vi+=w*s.vision;}
+  const pts={ok:1,riziko:0.5,chyba:0};const items=S.comply[prod]||[];
+  const co=items.length?items.reduce((a,i)=>a+pts[i.s],0)/items.length:0.5;
+  const check=ch/W,vision=vi/W;return {check,vision,comply:co,total:0.3*check+0.5*vision+0.2*co};}
+
+// ================= obraz =================
+const cv=document.getElementById("cv"),ctx=cv.getContext("2d",{willReadFrequently:true});
+const ov=document.getElementById("ov"),octx=ov.getContext("2d");
+const imgCache={};let simCache={};
+function loadImg(v){return new Promise((res,rej)=>{if(v.canvas)return res(v.canvas);if(imgCache[v.id])return res(imgCache[v.id]);const im=new Image();im.onload=()=>{
+  const c=document.createElement("canvas");c.width=v.w;c.height=v.h;const x=c.getContext("2d",{willReadFrequently:true});x.drawImage(im,0,0,v.w,v.h);
+  imgCache[v.id]=c;res(c)};im.onerror=rej;im.src=v.img;});}
+const FILTER_OK=(()=>{try{const t=document.createElement("canvas").getContext("2d");t.filter="blur(2px)";return t.filter==="blur(2px)";}catch(e){return false}})();
+function blurCanvas(src,sigma){
+  const out=document.createElement("canvas");out.width=src.width;out.height=src.height;const o=out.getContext("2d");
+  if(sigma<0.3){o.drawImage(src,0,0);return out;}
+  if(FILTER_OK){o.filter=`blur(${sigma}px)`;o.drawImage(src,0,0);o.filter="none";return out;}
+  const f=Math.max(1,sigma*1.6),w=Math.max(1,Math.round(src.width/f)),h=Math.max(1,Math.round(src.height/f));
+  const t=document.createElement("canvas");t.width=w;t.height=h;const tc=t.getContext("2d");tc.imageSmoothingQuality="high";tc.drawImage(src,0,0,w,h);
+  o.imageSmoothingQuality="high";o.drawImage(t,0,0,src.width,src.height);return out;}
+function rng(seed){return()=>{seed|=0;seed=seed+0x6D2B79F5|0;let t=Math.imul(seed^seed>>>15,1|seed);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;}}
+function simulate(v,base,c){
+  const key=v.id+"|"+c.id+"|"+v.pxmm+"|"+(v.rev||0); if(simCache[key]) return simCache[key];
+  const w=base.width,h=base.height;const src=base.getContext("2d").getImageData(0,0,w,h);const px=src.data;
+  for(let i=0;i<px.length;i+=4){const o=ctransLin([LIN[px[i]],LIN[px[i+1]],LIN[px[i+2]]],c);px[i]=toSrgb(o[0]);px[i+1]=toSrgb(o[1]);px[i+2]=toSrgb(o[2]);}
+  const t=document.createElement("canvas");t.width=w;t.height=h;t.getContext("2d").putImageData(src,0,0);
+  const sigma=c.visus<1?mar(c.visus,distOf(v.strana))*v.pxmm*0.8:0;
+  const out=blurCanvas(t,sigma);const o=out.getContext("2d");
+  if(c.field){const cx=w/2,cy=h/2,R=Math.max(w,h);
+    if(c.field==="peripheral"){const g=o.createRadialGradient(cx,cy,R*0.22,cx,cy,R*0.34);g.addColorStop(0,"rgba(25,25,25,0)");g.addColorStop(1,"rgba(25,25,25,1)");o.fillStyle=g;o.fillRect(0,0,w,h);}
+    else if(c.field==="central"){const g=o.createRadialGradient(cx,cy,R*0.04,cx,cy,R*0.13);g.addColorStop(0,"rgba(70,70,70,0.92)");g.addColorStop(1,"rgba(70,70,70,0)");o.fillStyle=g;o.fillRect(0,0,w,h);}
+    else{const r=rng(7);for(let i=0;i<26;i++){const x=(0.08+0.84*r())*w,y=(0.08+0.84*r())*h,rad=(0.025+0.045*r())*R;
+      const g=o.createRadialGradient(x,y,0,x,y,rad);g.addColorStop(0,"rgba(45,35,30,0.85)");g.addColorStop(0.55,"rgba(45,35,30,0.55)");g.addColorStop(1,"rgba(45,35,30,0)");o.fillStyle=g;o.fillRect(x-rad,y-rad,2*rad,2*rad);}}}
+  simCache[key]=out;return out;}
+
+// ================= měření (k-means + spojité komponenty) =================
+function measureBox(base,b){
+  let [x0,y0,x1,y1]=b.map(Math.round);x0=Math.max(0,x0);y0=Math.max(0,y0);x1=Math.min(base.width,x1);y1=Math.min(base.height,y1);
+  const w=x1-x0,h=y1-y0;if(w<3||h<3)return {fg:[0,0,0],bg:[255,255,255],glyph:0,xh:0,hs:[]};
+  const d=base.getContext("2d").getImageData(x0,y0,w,h).data;const n=w*h;
+  const P=new Float32Array(n*3);for(let i=0;i<n;i++){P[i*3]=d[i*4];P[i*3+1]=d[i*4+1];P[i*3+2]=d[i*4+2];}
+  let lo=0,hi=0,lmin=1e9,lmax=-1;for(let i=0;i<n;i++){const l=P[i*3]+P[i*3+1]+P[i*3+2];if(l<lmin){lmin=l;lo=i}if(l>lmax){lmax=l;hi=i}}
+  let C=[[P[lo*3],P[lo*3+1],P[lo*3+2]],[P[hi*3],P[hi*3+1],P[hi*3+2]]];const L=new Uint8Array(n);
+  for(let it=0;it<10;it++){const s=[[0,0,0,0],[0,0,0,0]];
+    for(let i=0;i<n;i++){let best=0,bd=1e18;for(let k=0;k<2;k++){const a=P[i*3]-C[k][0],bb=P[i*3+1]-C[k][1],c=P[i*3+2]-C[k][2];const dd=a*a+bb*bb+c*c;if(dd<bd){bd=dd;best=k}}
+      L[i]=best;s[best][0]+=P[i*3];s[best][1]+=P[i*3+1];s[best][2]+=P[i*3+2];s[best][3]++;}
+    C=s.map((v,k)=>v[3]?[v[0]/v[3],v[1]/v[3],v[2]/v[3]]:C[k]);}
+  const cnt=[0,0];for(let x=0;x<w;x++){cnt[L[x]]++;cnt[L[(h-1)*w+x]]++;}for(let y=0;y<h;y++){cnt[L[y*w]]++;cnt[L[y*w+w-1]]++;}
+  const bgk=cnt[0]>=cnt[1]?0:1,fgk=1-bgk;
+  const seen=new Uint8Array(n),hs=[];
+  for(let i=0;i<n;i++){if(L[i]!==fgk||seen[i])continue;let ymin=1e9,ymax=-1,xmin=1e9,xmax=-1;const st=[i];seen[i]=1;
+    while(st.length){const j=st.pop(),y=(j/w)|0,x=j-y*w;if(y<ymin)ymin=y;if(y>ymax)ymax=y;if(x<xmin)xmin=x;if(x>xmax)xmax=x;
+      for(const q of [j-1,j+1,j-w,j+w]){if(q<0||q>=n)continue;const qy=(q/w)|0;if(Math.abs((q-qy*w)-x)>1)continue;if(!seen[q]&&L[q]===fgk){seen[q]=1;st.push(q)}}}
+    const hh=ymax-ymin+1,ww=xmax-xmin+1;if(hh>=3&&ww>=2&&hh<h*0.95&&ww<w*0.9)hs.push(hh);}
+  hs.sort((a,b)=>a-b);let glyph=0,xh=0;
+  if(hs.length){const mx=hs[hs.length-1];const main=hs.filter(v=>v>=0.45*mx);glyph=main[Math.floor(main.length/2)];xh=hs[Math.floor(hs.length*0.35)];}
+  return {fg:C[fgk],bg:C[bgk],glyph,xh,hs};}
+const median=a=>{if(!a.length)return 0;const s=[...a].sort((x,y)=>x-y);return s[Math.floor(s.length/2)]};
+function textHeight(hs,caps){
+  if(!hs.length)return 0;const p90=hs[Math.floor(0.9*(hs.length-1))];
+  if(caps)return median(hs.filter(v=>v>=0.6*p90));
+  const band=hs.filter(v=>v>=0.4*p90&&v<=0.82*p90);return band.length>=3?median(band):0.7*p90;}
+
+// ================= OCR (Tesseract.js, self-hosted) =================
+let workerP=null;
+function progress(p,msg){const el=document.getElementById("up-prog");el.hidden=false;el.firstElementChild.style.width=Math.round(p*100)+"%";if(msg)document.getElementById("up-msg").textContent=msg;}
+function getWorker(){
+  if(!workerP){workerP=Tesseract.createWorker(["ces","eng"],1,{workerPath:"worker.min.js",corePath:"./",langPath:"./",gzip:true,
+    logger:m=>{if(m.status==="recognizing text")progress(0.3+0.3*m.progress,"Čtu text na obalu (OCR) … "+Math.round(m.progress*100)+" %");
+               else if(m.status&&m.status.includes("load"))progress(0.05+0.2*(m.progress||0),"Načítám OCR model (jen poprvé, cca 5 MB) …");}});
+    workerP.catch(()=>{workerP=null});}
+  return workerP;}
+
+const norm=s=>s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"");
+const RX={
+  slozeni:/slozeni|zlozenie|ingredien|skladnik|osszetev|zutaten/,
+  alerg:/muze obsahovat|moze obsahovat|obsahuje|alergi|alergen|stopy|may contain/,
+  vyziva:/vyzivove|energ|\bkj\b|kcal|bilkovin|sacharid|nasycen|\btuky?\b/,
+  datum:/trvanliv|spotrebujte|minimal|datum|\bdmt\b|best before|\b\d{1,2}[.\/]\s?\d{1,2}[.\/]\s?\d{2,4}\b/,
+  vyrobce:/vyrobce|vyrobeno|vyrobca|vyrobil|dovozce|distribut|s\.\s?r\.\s?o|spol\.|a\.\s?s\.|\bgmbh\b|\bltd\b/,
+  uchov:/skladujte|uchovavejte|uchovavajte|chrante|skladovat|teplot|v suchu/,
+  mnozstvi:/\b\d+([.,]\d+)?\s?(g|kg|ml|l)\b/,
+};
+function roleOf(t){const n=norm(t);
+  if(RX.slozeni.test(n))return ["povinný","Složení"];
+  if(RX.alerg.test(n))return ["povinný","Alergeny"];
+  if(RX.vyziva.test(n))return ["povinný","Výživové údaje"];
+  if(RX.datum.test(n))return ["povinný","Datum trvanlivosti"];
+  if(RX.vyrobce.test(n))return ["povinný","Výrobce / provozovatel"];
+  if(RX.uchov.test(n))return ["povinný","Podmínky uchování"];
+  if(RX.mnozstvi.test(n)&&n.replace(/[^a-z0-9]/g,"").length<=14)return ["množství","Čisté množství"];
+  if(/^\s*\d{2,4}\s*[gl]?\s*$/.test(n))return ["množství","Čisté množství"];
+  return [null,null];}
+
+function buildElements(datas,canvas,pxmm,strana){
+  const lines=[];let pid=0;
+  const ov=(a,b)=>{const ix=Math.max(0,Math.min(a[2],b[2])-Math.max(a[0],b[0])),iy=Math.max(0,Math.min(a[3],b[3])-Math.max(a[1],b[1]));const ar=(a[2]-a[0])*(a[3]-a[1]);return ar?ix*iy/ar:0;};
+  for(const [di,data] of datas.entries())for(const b of data.blocks||[])for(const p of b.paragraphs||[]){pid++;for(const l of p.lines||[]){
+    const good=(l.words||[]).filter(w=>w.confidence>=62&&/[\p{L}\d]{2,}/u.test(w.text));
+    if(!good.length)continue;const text=good.map(w=>w.text).join(" ");
+    const alnum=text.replace(/[^\p{L}\d]/gu,"").length;
+    if(alnum<3||(alnum<5&&!/\d/.test(text)&&median(good.map(w=>w.confidence))<80))continue;
+    const bb=[Math.min(...good.map(w=>w.bbox.x0)),Math.min(...good.map(w=>w.bbox.y0)),Math.max(...good.map(w=>w.bbox.x1)),Math.max(...good.map(w=>w.bbox.y1))];
+    if(di>0&&lines.some(q=>ov(bb,q.bb)>0.3||ov(q.bb,bb)>0.3))continue; // druhý průchod OCR: jen nové řádky
+    const letters=text.replace(/[^\p{L}]/gu,"");const up=letters.replace(/[^\p{Lu}]/gu,"").length/Math.max(1,letters.length);
+    const caps=!letters.length||up>0.6;const ph=Math.max(4,(bb[3]-bb[1])*0.35);
+    const m=measureBox(canvas,[bb[0]-ph,bb[1]-ph,bb[2]+ph,bb[3]+ph]);
+    const hpx=textHeight(m.hs,caps);if(!hpx)continue;
+    const cov=good.reduce((a,w)=>a+(w.bbox.x1-w.bbox.x0),0)/Math.max(1,(l.bbox.x1-l.bbox.x0));
+    lines.push({text,bb,caps,hpx,fg:m.fg,bg:m.bg,pid,cov,conf:median(good.map(w=>w.confidence))});}}
+  // sloučení sousedních řádků se stejnou velikostí písma do odstavců (union-find podle geometrie)
+  const par=lines.map((_,i)=>i);const find=i=>par[i]===i?i:(par[i]=find(par[i]));
+  for(let i=0;i<lines.length;i++)for(let j=i+1;j<lines.length;j++){const a=lines[i],b=lines[j];if(a.caps||b.caps)continue;
+    if(Math.abs(a.hpx-b.hpx)>0.35*Math.max(a.hpx,b.hpx))continue;
+    const lh=((a.bb[3]-a.bb[1])+(b.bb[3]-b.bb[1]))/2;const gap=Math.max(a.bb[1],b.bb[1])-Math.min(a.bb[3],b.bb[3]);if(gap>0.9*lh)continue;
+    const ox=Math.min(a.bb[2],b.bb[2])-Math.max(a.bb[0],b.bb[0]);if(ox<0.3*Math.min(a.bb[2]-a.bb[0],b.bb[2]-b.bb[0]))continue;par[find(i)]=find(j);}
+  const groupsM={};lines.forEach((l,i)=>(groupsM[find(i)]=groupsM[find(i)]||[]).push(l));
+  const els=[];
+  for(const ls0 of Object.values(groupsM)){const ls=ls0.sort((a,b)=>a.bb[1]-b.bb[1]);
+    const g={ls,x:ls.length>1||!ls[0].caps,h:median(ls.map(l=>l.hpx))};
+    {const t=g.ls.map(l=>l.text).join(" ");
+      const bb=[Math.min(...g.ls.map(l=>l.bb[0])),Math.min(...g.ls.map(l=>l.bb[1])),Math.max(...g.ls.map(l=>l.bb[2])),Math.max(...g.ls.map(l=>l.bb[3]))];
+      const big=g.ls.reduce((a,l)=>(l.bb[2]-l.bb[0])>(a.bb[2]-a.bb[0])?l:a,g.ls[0]);
+      const h=g.h/pxmm;if(h<0.35||h>120)continue;
+      els.push({text:t,box:bb,x:g.x,h,fg:big.fg,bg:big.bg,ocr:true,lines:g.ls.length,cov:g.ls.reduce((a,l)=>a+l.cov,0)/g.ls.length});}}
+  // role
+  for(const e of els){let [r,lab]=roleOf(e.text);if(r==="množství"&&strana!=="přední")[r,lab]=[null,null];e.role=r||"tvrzení";e.label=lab;}
+  // na přední straně: největší neprovinný text = název, další velký = varianta
+  if(strana==="přední"){const cand=els.filter(e=>e.role==="tvrzení").sort((a,b)=>b.h-a.h);
+    if(cand[0]){cand[0].role="název";cand[0].label="Název výrobku";}
+    if(cand[1]&&cand[1].h>=0.45*cand[0].h){cand[1].role="varianta";cand[1].label="Varianta / příchuť";}}
+  // odstavcový text na zadní a boční straně, který není rozpoznaný, bereme jako povinný údaj jen pokud je dlouhý
+  for(const e of els)if(e.role==="tvrzení"&&strana!=="přední"&&e.x&&(e.lines>=2||e.h<2)){e.role="povinný";e.label="Povinný text (odstavec)";}
+  for(const e of els){e.display=(e.label?e.label+": ":"")+(e.text.length>38?e.text.slice(0,36)+"…":e.text);}
+  els.sort((a,b)=>(ROLE_W[b.role]-ROLE_W[a.role])||((b.box[2]-b.box[0])*(b.box[3]-b.box[1])-(a.box[2]-a.box[0])*(a.box[3]-a.box[1])));
+  const keep=els.slice(0,36);keep.sort((a,b)=>a.box[1]-b.box[1]||a.box[0]-b.box[0]);
+  return keep.map(e=>({text:e.display,full:e.text,role:e.role,x:e.x,h:+e.h.toFixed(2),fg:e.fg,bg:e.bg,box:e.box.map(Math.round),ocr:true,readable:e.cov>=0.75&&e.text.length>=20}));}
+
+// ---------- automatický Comply z textu OCR ----------
+const COMPLY_DEF=[
+  ["Název potraviny","čl. 9 odst. 1 a), čl. 17",null],
+  ["Seznam složek","čl. 9 odst. 1 b), čl. 18","slozeni"],
+  ["Alergeny uvedeny a zvýrazněny","čl. 9 odst. 1 c), čl. 21","alerg"],
+  ["Čisté množství a výška číslic","čl. 9 odst. 1 e), čl. 23; příloha IX","mnozstvi"],
+  ["Datum minimální trvanlivosti / použitelnosti","čl. 9 odst. 1 f), čl. 24","datum"],
+  ["Podmínky uchování","čl. 9 odst. 1 g), čl. 25","uchov"],
+  ["Provozovatel (výrobce) a adresa","čl. 9 odst. 1 h), čl. 8","vyrobce"],
+  ["Výživové údaje","čl. 9 odst. 1 l), čl. 30–35","vyziva"],
+  ["x-výška povinných údajů ≥ 1,2 mm","čl. 13 odst. 2, příloha IV",null],
+];
+function qtyRule(g){return g<=50?2:g<=200?3:g<=1000?4:6;}
+function autoComply(prod){
+  const vs=viewsOf(prod);const txt=norm(vs.map(v=>v.ocrText||"").join("\n"));const els=vs.flatMap(v=>v.elements);
+  const prev=S.comply[prod]||[];
+  return COMPLY_DEF.map(([t,law,key],i)=>{
+    if(prev[i]&&prev[i].manual)return prev[i];
+    let s="riziko",note="OCR údaj nenašlo – ověřte ručně";
+    if(i===0){const n=els.find(e=>e.role==="název");if(n){s="ok";note="nalezeno na přední straně";}else note="nahrajte přední stranu";}
+    else if(key==="mnozstvi"){const qe=els.find(e=>e.role==="množství");const q=txt.match(/\b(\d+(?:[.,]\d+)?)\s?(g|kg|ml|l)\b/)||(qe&&(qe.full||qe.text).match(/(\d{2,4})()/));
+      if(q){let g=parseFloat(q[1].replace(",","."));if(q[2]==="kg"||q[2]==="l")g*=1000;if(!q[2])q[0]=q[1]+" (jednotka nečitelná)";const need=qtyRule(g);
+        if(qe){const hh=qe.h;s=hh>=need?"ok":"chyba";note=`${q[0]} · číslice ${num(hh)} mm, minimum ${need} mm`;}else{s="riziko";note=`${q[0]} nalezeno, výšku číslic nelze ověřit (minimum ${need} mm)`;}}}
+    else if(key){if(RX[key].test(txt)){s="ok";note="nalezeno v textu (OCR)";}}
+    else{const px=els.filter(e=>e.role==="povinný"&&e.x);if(px.length){const hs=px.map(e=>e.h).sort((a,b)=>a-b);const mn=hs[Math.floor(0.25*(hs.length-1))];s=mn>=1.2?"ok":"chyba";note=`x-výška povinných textů (dolní kvartil) ${num(mn,2)} mm`;}else note="žádný povinný odstavcový text nezměřen";}
+    return {t,s,law:law+" · "+note};});}
+
+// ================= nahrání a analýza =================
+function autoCrop(c){ // odstraní jednolité pozadí kolem obalu (produktové fotografie)
+  const w=c.width,h=c.height,d=c.getContext("2d").getImageData(0,0,w,h).data;const B=[];
+  for(let x=0;x<w;x+=2){B.push(x*4,((h-1)*w+x)*4);}for(let y=0;y<h;y+=2){B.push(y*w*4,(y*w+w-1)*4);}
+  const m=[0,1,2].map(k=>B.reduce((a,i)=>a+d[i+k],0)/B.length);const sd=Math.sqrt(B.reduce((a,i)=>a+[0,1,2].reduce((s,k)=>s+(d[i+k]-m[k])**2,0),0)/B.length/3);
+  if(sd>18)return null;
+  const diff=i=>Math.abs(d[i]-m[0])+Math.abs(d[i+1]-m[1])+Math.abs(d[i+2]-m[2])>60;
+  const rows=new Uint32Array(h),cols=new Uint32Array(w);
+  for(let y=0;y<h;y++)for(let x=0;x<w;x++)if(diff((y*w+x)*4)){rows[y]++;cols[x]++;}
+  const th=r=>Math.max(3,r*0.02);let y0=0,y1=h-1,x0=0,x1=w-1;
+  while(y0<h&&rows[y0]<th(w))y0++;while(y1>y0&&rows[y1]<th(w))y1--;while(x0<w&&cols[x0]<th(h))x0++;while(x1>x0&&cols[x1]<th(h))x1--;
+  if(y1-y0<h*0.2||x1-x0<w*0.1)return null;if(y1-y0>h*0.97&&x1-x0>w*0.97)return null;
+  const p=Math.round(0.01*Math.max(w,h));return [Math.max(0,x0-p),Math.max(0,y0-p),Math.min(w,x1+p+1),Math.min(h,y1+p+1)];}
+async function fileToCanvas(f,target=2000){
+  const url=URL.createObjectURL(f);try{const im=await new Promise((res,rej)=>{const i=new Image();i.onload=()=>res(i);i.onerror=()=>rej(new Error("Soubor nelze načíst jako obrázek."));i.src=url;});
+    const sc0=Math.min(1,2400/Math.max(im.naturalWidth,im.naturalHeight));const o=document.createElement("canvas");o.width=Math.round(im.naturalWidth*sc0);o.height=Math.round(im.naturalHeight*sc0);
+    o.getContext("2d",{willReadFrequently:true}).drawImage(im,0,0,o.width,o.height);
+    const cb=autoCrop(o)||[0,0,o.width,o.height];const cw=cb[2]-cb[0],ch=cb[3]-cb[1];
+    const sc=Math.min(3,target/Math.max(cw,ch));const c=document.createElement("canvas");c.width=Math.round(cw*sc);c.height=Math.round(ch*sc);
+    const x=c.getContext("2d",{willReadFrequently:true});x.imageSmoothingQuality="high";x.drawImage(o,cb[0],cb[1],cw,ch,0,0,c.width,c.height);
+    c.cropped=cb[2]-cb[0]<o.width||cb[3]-cb[1]<o.height;return c;}
+  finally{URL.revokeObjectURL(url);}}
+async function analyze(){
+  const f=document.getElementById("up-file").files[0];if(!f)return;
+  const sel=document.getElementById("up-prod").value;let prod=sel;
+  if(sel==="__new"){prod=(document.getElementById("up-name").value||"").trim()||("Vlastní obal "+(++S.custom));
+    if(prodByName(prod))prod+=" ("+(++S.custom)+")";DATA.products.push({name:prod,code:"V",custom:true,full:prod});}
+  const strana=document.getElementById("up-side").value;const mm=parseFloat(document.getElementById("up-mm").value)||250;
+  const go=document.getElementById("up-go");go.disabled=true;
+  try{
+    progress(0.02,"Připravuji obrázek …");const c=await fileToCanvas(f);const pxmm=c.height/mm;
+    const w=await getWorker();progress(0.3,"Čtu text na obalu (OCR) …");
+    await w.setParameters({tessedit_pageseg_mode:"3"});
+    const r=await w.recognize(c,{},{blocks:true,text:true});
+    progress(0.6,"Hledám drobný a rozptýlený text (2. průchod OCR) …");
+    await w.setParameters({tessedit_pageseg_mode:"11"});
+    const r2=await w.recognize(c,{},{blocks:true,text:true});
+    progress(0.92,"Měřím kontrast a výšku písma …");await new Promise(r=>setTimeout(r,30));
+    const els=buildElements([r.data,r2.data],c,pxmm,strana);
+    const id="u"+Date.now();const sideName={"přední":"Přední strana","bok":"Boční strana","zadní":"Zadní strana"}[strana];
+    const n=viewsOf(prod).filter(v=>v.strana===strana).length;
+    DATA.views.push({id,label:sideName+(n?" "+(n+1):""),product:prod,strana,pxmm:+pxmm.toFixed(4),w:c.width,h:c.height,canvas:c,elements:els,ocrText:r.data.text+"\n"+r2.data.text,custom:true});
+    S.comply[prod]=autoComply(prod);
+    progress(1,`Hotovo: nalezeno ${els.length} textových prvků${c.cropped?" (pozadí kolem obalu bylo automaticky oříznuto)":""}. Zkontrolujte role a případně doplňte prvky tažením myši.`);
+    S.product=prod;S.view=id;S.sel=null;fillProdSelect();buildTabs();await render();
+    document.getElementById("stage").scrollIntoView({behavior:"smooth",block:"start"});
+  }catch(err){console.error(err);document.getElementById("up-msg").textContent="Analýza selhala: "+(err&&err.message||err)+". Zkuste menší nebo ostřejší fotografii.";}
+  finally{go.disabled=!document.getElementById("up-file").files[0];}}
+
+// ================= AI návrh v prohlížeči (nahrané obaly) =================
+const ALLERG=/^(p[sš]eni|oves|ovs|ječ|jač|žit|raž|špald|mlé|mlie|mlék|sýr|smetan|máslo|vejc|vajc|sój|soj|araš|ořech|orech|mand|lísk|liesk|kešu|pekan|pistá|vlaš|sezam|hořč|horč|celer|ryb|kor[yý]š|měkk|lupin|siřič|lepek|lepok|gluten)/i;
+function roundRect(o,x,y,w,h,r){o.beginPath();o.moveTo(x+r,y);o.arcTo(x+w,y,x+w,y+h,r);o.arcTo(x+w,y+h,x,y+h,r);o.arcTo(x,y+h,x,y,r);o.arcTo(x,y,x+w,y,r);o.closePath();}
+const FONT_UI='"Atkinson Hyperlegible", "Segoe UI", Arial, sans-serif';
+let XH_RATIO=null;
+function xRatio(o){if(XH_RATIO)return XH_RATIO;o.save();o.font="100px "+FONT_UI;const m=o.measureText("x");o.restore();XH_RATIO=(m.actualBoundingBoxAscent||52)/100;return XH_RATIO;}
+function typeset(o,text,x0,width,fontPx,lh){
+  const words=text.split(/\s+/).filter(Boolean);const lines=[];let line=[],lw=0;
+  for(const wd of words){const b=ALLERG.test(wd.replace(/^[(„"]+/,""));o.font=(b?"700 ":"400 ")+fontPx+"px "+FONT_UI;const tw=o.measureText(wd).width,sp=o.measureText(" ").width;
+    if(lw+tw>width&&line.length){lines.push(line);line=[];lw=0;}line.push({wd,b,tw});lw+=tw+sp;}
+  if(line.length)lines.push(line);return lines;}
+function recolor(o,box,fg,bg,P,T){
+  const [x0,y0,x1,y1]=box;const w=x1-x0,h=y1-y0;const im=o.getImageData(x0,y0,w,h),d=im.data;
+  const D=[fg[0]-bg[0],fg[1]-bg[1],fg[2]-bg[2]];const dd=D[0]*D[0]+D[1]*D[1]+D[2]*D[2]||1;
+  for(let i=0;i<d.length;i+=4){let t=((d[i]-bg[0])*D[0]+(d[i+1]-bg[1])*D[1]+(d[i+2]-bg[2])*D[2])/dd;t=Math.max(0,Math.min(1,(t-0.15)/0.7));
+    d[i]=P[0]+(T[0]-P[0])*t;d[i+1]=P[1]+(T[1]-P[1])*t;d[i+2]=P[2]+(T[2]-P[2])*t;}
+  const t=document.createElement("canvas");t.width=w;t.height=h;t.getContext("2d").putImageData(im,0,0);return t;}
+async function redesignView(v,prodName){
+  const base=await loadImg(v);const c=document.createElement("canvas");c.width=base.width;c.height=base.height;
+  const o=c.getContext("2d",{willReadFrequently:true});o.drawImage(base,0,0);
+  try{await document.fonts.load("700 20px \"Atkinson Hyperlegible\"");await document.fonts.load("400 20px \"Atkinson Hyperlegible\"");}catch(e){}
+  const ppm=v.pxmm,d=distOf(v.strana),plates=[],out=[];
+  const inPlate=e=>{const cx=(e.box[0]+e.box[2])/2,cy=(e.box[1]+e.box[3])/2;return plates.some(p=>cx>=p[0]&&cx<=p[2]&&cy>=p[1]&&cy<=p[3]);};
+  const order=[...v.elements].sort((a,b)=>(b.role==="povinný"&&b.x)-(a.role==="povinný"&&a.x));
+  for(const e of order){
+    if(inPlate(e))continue;
+    const s=scoreEl(e,d);
+    if(e.role==="značka"||(s.item>=0.7&&s.k0>=4.5&&!(e.role==="povinný"&&e.x&&e.h<1.3))){out.push({...e});continue;}
+    if(e.role==="povinný"&&e.x&&(e.full||e.text)&&(e.readable!==false)&&(!e.ocr||e.readable)){ // R2+R3+R4: přesazba povinného textu
+      const text=(e.full||e.text).replace(/\s+/g," ");let xmm=1.3;const pad=1.2*ppm;
+      let width=Math.max(e.box[2]-e.box[0],Math.min(45*ppm,c.width*0.8));let x0=Math.max(0,Math.min(e.box[0],c.width-width-2*pad));
+      let fpx,lh,lines,H;
+      for(;;){fpx=xmm*ppm/xRatio(o);lh=fpx*1.28;lines=typeset(o,text,x0+pad,width,fpx,lh);H=lines.length*lh+2*pad;if(H<=c.height*0.92||xmm<=1.2)break;xmm=1.2;}
+      let y0=Math.max(0,Math.min(e.box[1],c.height-H));
+      const PL=[251,248,242],INK=[22,22,22];o.fillStyle=hex(PL);roundRect(o,x0,y0,width+2*pad,H,Math.min(18,pad));o.fill();
+      o.fillStyle=hex(INK);o.textBaseline="alphabetic";
+      lines.forEach((ln,i)=>{let x=x0+pad;const y=y0+pad+lh*i+fpx*0.92;for(const t of ln){o.font=(t.b?"700 ":"400 ")+fpx+"px "+FONT_UI;o.fillText(t.wd,x,y);x+=t.tw+o.measureText(" ").width;}});
+      const box=[x0,y0,x0+width+2*pad,y0+H].map(Math.round);plates.push(box);
+      out.push({...e,h:xmm,x:true,fg:INK,bg:PL,box,ai:"přesazeno, x-výška "+num(xmm)+" mm, kontrast "+num(cr(INK,PL))+" : 1"});continue;}
+    // R1 (+R6): kontrastní plocha a přebarvení, u malého písma zvětšení
+    const darkText=lum(e.fg)<lum(e.bg);const P=darkText?[255,255,255]:[18,40,30],T=darkText?[18,18,18]:[255,255,255];
+    const bh=e.box[3]-e.box[1],pad=Math.max(3,bh*0.18);
+    const src=[e.box[0]-pad,e.box[1]-pad,e.box[2]+pad,e.box[3]+pad].map(Math.round);src[0]=Math.max(0,src[0]);src[1]=Math.max(0,src[1]);src[2]=Math.min(c.width,src[2]);src[3]=Math.min(c.height,src[3]);
+    const need=fS(e.h*(e.x?1.4:1),0.4,d)<1?Math.min(1.4,2.5*5*mar(0.4,d)/(e.h*(e.x?1.4:1))):1;let k=Math.max(1,need);
+    if(k>1){const cx=(src[0]+src[2])/2,cy=(src[1]+src[3])/2,hw=(src[2]-src[0])*k/2,hh=(src[3]-src[1])*k/2,nb=[cx-hw,cy-hh,cx+hw,cy+hh];
+      const hit=v.elements.some(o2=>o2!==e&&!(o2.box[2]<nb[0]||o2.box[0]>nb[2]||o2.box[3]<nb[1]||o2.box[1]>nb[3]))||plates.some(p=>!(p[2]<nb[0]||p[0]>nb[2]||p[3]<nb[1]||p[1]>nb[3]));
+      if(hit)k=1;}
+    const tile=recolor(o,src,e.fg,e.bg,P,T);const w=(src[2]-src[0])*k,h=(src[3]-src[1])*k;
+    let nx=(src[0]+src[2])/2-w/2,ny=(src[1]+src[3])/2-h/2;nx=Math.max(0,Math.min(c.width-w,nx));ny=Math.max(0,Math.min(c.height-h,ny));
+    o.save();roundRect(o,nx,ny,w,h,Math.min(10,h*0.2));o.clip();o.fillStyle=hex(P);o.fillRect(nx,ny,w,h);o.imageSmoothingQuality="high";o.drawImage(tile,nx,ny,w,h);o.restore();
+    const box=[nx,ny,nx+w,ny+h].map(Math.round);plates.push(box);
+    out.push({...e,h:+(e.h*k).toFixed(2),fg:T,bg:P,box,ai:"kontrastní plocha"+(k>1?", zvětšeno ×"+num(k,2):"")});}
+  // R7: QR na přední straně
+  if(v.strana==="přední"&&typeof qrcode==="function"){
+    const q=qrcode(0,"M");q.addData(location.origin+location.pathname+"#pristupna-etiketa");q.make();const n=q.getModuleCount();
+    const S2=Math.round(16*ppm),mx=Math.round(1.5*ppm),capH=Math.round(5.5*ppm),x0=mx,y0=c.height-S2-capH-mx;
+    o.fillStyle="#fff";roundRect(o,x0-6,y0-6,S2+12,S2+capH+12,10);o.fill();o.strokeStyle="#111";o.lineWidth=Math.max(2,ppm*0.4);o.stroke();
+    const cell=S2/n;o.fillStyle="#111";for(let r=0;r<n;r++)for(let cc=0;cc<n;cc++)if(q.isDark(r,cc))o.fillRect(x0+cc*cell,y0+r*cell,Math.ceil(cell),Math.ceil(cell));
+    const fpx=2.6*ppm/0.72;o.font="700 "+fpx+"px "+FONT_UI;o.textAlign="center";o.fillText("ČITELNÁ ETIKETA",x0+S2/2,y0+S2+capH*0.75,S2+8);o.textAlign="start";
+    out.push({text:"QR: čitelná etiketa",role:"tvrzení",x:false,h:2.6,fg:[17,17,17],bg:[255,255,255],box:[x0,y0+S2,x0+S2,y0+S2+capH],ai:"R7 – QR s přístupnou verzí"});}
+  return {canvas:c,elements:out};}
+async function makeRedesign(prod){
+  const name=prod+" – AI návrh";
+  DATA.views=DATA.views.filter(v=>v.product!==name);
+  if(!prodByName(name))DATA.products.push({name,code:"V′",custom:true,of:prod,full:"AI návrh: "+prod});
+  prodByName(prod).navrh=name;
+  for(const v of viewsOf(prod)){const r=await redesignView(v,name);
+    DATA.views.push({id:v.id+"-ai",label:v.label,product:name,strana:v.strana,pxmm:v.pxmm,w:v.w,h:v.h,canvas:r.canvas,elements:r.elements,custom:true,rev:Date.now()});}
+  const px=viewsOf(name).flatMap(v=>v.elements).filter(e=>e.role==="povinný"&&e.x);
+  S.comply[name]=(S.comply[prod]||[]).map((it,i)=>i===8&&px.length&&Math.min(...px.map(e=>e.h))>=1.2?{...it,s:"ok",law:"čl. 13 odst. 2 · po přesazbě x-výška ≥ 1,2 mm"}:{...it});
+  return name;}
+
+// ================= vykreslení =================
+let pending=null,calLine=null;
+async function render(){
+  const v=viewById(S.view);const base=await loadImg(v);
+  cv.width=ov.width=v.w;cv.height=ov.height=v.h;
+  const c=COND.find(c=>c.id===S.cond);
+  ctx.drawImage(c?simulate(v,base,c):base,0,0);
+  drawOverlay();renderSide();}
+function drawOverlay(){
+  const v=viewById(S.view);octx.clearRect(0,0,ov.width,ov.height);const d=distOf(v.strana);const k=Math.max(1,v.h/1000);
+  v.elements.forEach((e,i)=>{const s=scoreEl(e,d),[cls]=band(s.item);const col=cls==="ok"?"#1d8a3a":cls==="warn"?"#c98a00":"#c4321f";
+    const [x0,y0,x1,y1]=e.box;octx.lineWidth=(S.sel===i?5:3)*k;octx.strokeStyle=col;octx.strokeRect(x0,y0,x1-x0,y1-y0);
+    const r=12*k,cx=Math.max(x0,r+1),cy=Math.max(y0,r+1);octx.fillStyle=col;octx.beginPath();octx.arc(cx,cy,r,0,7);octx.fill();
+    octx.fillStyle="#fff";octx.font=`bold ${13*k}px Atkinson Hyperlegible, sans-serif`;octx.textAlign="center";octx.textBaseline="middle";octx.fillText(i+1,cx,cy+1);});
+  if(pending){const [x0,y0,x1,y1]=pending;octx.setLineDash([6*k,4*k]);octx.lineWidth=2*k;octx.strokeStyle="#b5176b";octx.strokeRect(x0,y0,x1-x0,y1-y0);octx.setLineDash([]);}
+  if(calLine){const [a,b]=calLine;octx.lineWidth=3*k;octx.strokeStyle="#0a66d8";octx.beginPath();octx.moveTo(a[0],a[1]);octx.lineTo(b[0],b[1]);octx.stroke();
+    for(const p of [a,b]){octx.beginPath();octx.arc(p[0],p[1],5*k,0,7);octx.fillStyle="#0a66d8";octx.fill();}}}
+function renderSide(){
+  const v=viewById(S.view);const d=distOf(v.strana);
+  document.getElementById("pxmm").value=v.pxmm;document.getElementById("dist").textContent=d;
+  const c=COND.find(c=>c.id===S.cond);
+  document.getElementById("simnote").textContent=c?`Simulace: ${c.label}. ${c.desc} Rozmazání odpovídá čtení ze vzdálenosti ${d/10} cm.`:"Bez simulace. Barevné rámečky ukazují stav prvku (0,3 · Check + 0,7 · Vision), čísla odpovídají řádkům tabulky.";
+  document.getElementById("thead").innerHTML="<th>#</th><th>Prvek</th><th>Výška</th><th>Kontrast</th>"+COND.map(c=>`<th title="${esc(c.label)}">${c.short}</th>`).join("");
+  const tb=document.getElementById("tbody");tb.innerHTML="";
+  if(!v.elements.length)tb.innerHTML=`<tr><td colspan="${4+COND.length}" class="hint">Žádné prvky – označte text tažením myši v náhledu.</td></tr>`;
+  v.elements.forEach((e,i)=>{const s=scoreEl(e,d),[cls]=band(s.item);const tr=document.createElement("tr");tr.className="el";tr.setAttribute("aria-selected",S.sel===i);tr.tabIndex=0;
+    tr.innerHTML=`<td><span class="no ${cls}">${i+1}</span></td><td>${esc(e.text)}<br><small class="role">${esc(e.role)}${e.ai?" · AI: "+esc(e.ai):""}</small></td><td class="n">${num(e.h)} mm${e.x?" x":""}</td><td class="n">${num(s.k0)} : 1</td>`+
+      COND.map(c=>{const v=s.cond[c.id].v,[k]=band(v);return `<td><span class="cell ${k}">${pct(v)}</span></td>`}).join("");
+    const pick=()=>{S.sel=i;drawOverlay();renderSide();};tr.onclick=pick;tr.onkeydown=ev=>{if(ev.key==="Enter")pick();};tb.appendChild(tr);});
+  // detail
+  const det=document.getElementById("detail");
+  if(S.sel!=null&&v.elements[S.sel]){const e=v.elements[S.sel],s=scoreEl(e,d);det.hidden=false;
+    const sug=suggestColor(e.fg,e.bg,e.role==="povinný"?7:4.5);
+    const need=2.5*5*mar(0.4,d)/(e.x?1.4:1);const recs=[];
+    if(s.k0<4.5)recs.push(`Zvýšit kontrast z ${num(s.k0)} : 1 alespoň na 4,5 : 1${e.role==="povinný"?" (u povinných údajů cíl 7 : 1)":""} – navržená barva textu <span class="sw" style="background:${hex(sug)}"></span><span class="mono">${hex(sug)}</span> (kontrast ${num(cr(sug,e.bg))} : 1) nebo kontrastní podkladová plocha.`);
+    if(e.role==="povinný"&&e.x&&e.h<1.2)recs.push(`x-výška ${num(e.h,2)} mm je pod zákonným minimem 1,2 mm (čl. 13 nařízení 1169/2011) – zvětšit alespoň na 1,3 mm.`);
+    if(e.h<need)recs.push(`Pro pohodlné čtení s presbyopií by ${e.x?"x-výška":"výška"} písma měla být alespoň ${num(need)} mm.`);
+    const worst=COND.reduce((a,c)=>s.cond[c.id].v<s.cond[a.id].v?c:a,COND[0]);
+    if(s.cond[worst.id].v<0.5)recs.push(`Nejhůře prvek vychází při vadě „${worst.label}“ (${pct(s.cond[worst.id].v)} %). U drobných povinných údajů doplnit přístupnou digitální verzi (QR kód s textem a hlasovým čtením).`);
+    if(!recs.length)recs.push("Prvek splňuje cílové hodnoty, úprava není nutná.");
+    det.innerHTML=`<strong>${S.sel+1}. ${esc(e.text)}</strong>
+      ${e.full&&e.full!==e.text?`<span class="hint">OCR text: „${esc(e.full.length>260?e.full.slice(0,258)+"…":e.full)}“</span>`:""}
+      <span class="hint">Text <span class="sw" style="background:${hex(e.fg)}"></span><span class="mono">${hex(e.fg)}</span> · pozadí <span class="sw" style="background:${hex(e.bg)}"></span><span class="mono">${hex(e.bg)}</span> · Check ${pct(s.check)} % · Vision ${pct(s.vision)} %</span>
+      <ol class="reco">${recs.map(r=>`<li>${r}</li>`).join("")}</ol>
+      <div class="form"><label>Role<select id="ed-role">${Object.keys(ROLE_W).map(r=>`<option ${r===e.role?"selected":""}>${r}</option>`).join("")}</select></label>
+      <label>Výška (mm)<input id="ed-h" type="number" step="0.05" min="0.1" value="${e.h}"></label>
+      <label class="full" style="flex-direction:row;align-items:center;gap:6px;color:var(--ink)"><input id="ed-x" type="checkbox" ${e.x?"checked":""}> výška je x-výška (odstavcový text)</label></div>
+      <div class="row"><button class="btn" id="del">Odebrat prvek</button></div>`;
+    document.getElementById("del").onclick=()=>{v.elements.splice(S.sel,1);S.sel=null;afterEdit(v);};
+    document.getElementById("ed-role").onchange=ev=>{e.role=ev.target.value;afterEdit(v);};
+    document.getElementById("ed-h").onchange=ev=>{const h=parseFloat(ev.target.value);if(h>0){e.h=h;e.manual=true;afterEdit(v);}};
+    document.getElementById("ed-x").onchange=ev=>{e.x=ev.target.checked;afterEdit(v);};
+  } else det.hidden=true;
+  // skóre
+  const p=productScore(v.product);const pr=prodByName(v.product);
+  document.getElementById("prodname").textContent="Skóre · "+v.product;
+  for(const k of ["check","vision","comply","total"])document.getElementById("sc-"+k).textContent=p?pct(p[k])+" %":"–";
+  const [bc,bt]=p?band(p.total):["warn","neměřeno"];document.getElementById("band").innerHTML=`<span class="pill ${bc}">${bt}</span>`;
+  document.getElementById("compare").innerHTML=DATA.products.map(pp=>{const s=productScore(pp.name);const t=s?s.total:0;
+    return `<span class="${pp.name===v.product?"cur":""}">${esc(pp.name)}</span><div class="bar" role="img" aria-label="${esc(pp.name)} ${pct(t)} %"><i style="width:${pct(t)}%"></i></div><span class="mono">${s?pct(t)+" %":"–"}</span>`}).join("");
+  // comply
+  document.getElementById("comply-note").textContent=pr&&pr.custom?"Stav odhadnutý automaticky z textu přečteného OCR. Klepnutím ho můžete opravit.":"Kontrolní seznam podle nařízení (EU) č. 1169/2011, údaje z obalu ověřil analytik. Stav lze přepnout.";
+  const ul=document.getElementById("comply");ul.innerHTML="";
+  (S.comply[v.product]||[]).forEach(it=>{const li=document.createElement("li");
+    li.innerHTML=`<div>${esc(it.t)}<br><small>${esc(it.law)}</small></div><div class="seg" role="group" aria-label="Stav">${[["ok","OK","ok"],["riziko","riziko","warn"],["chyba","chyba","bad"]].map(([s,l,c])=>`<button class="${c}" aria-pressed="${it.s===s}" data-s="${s}">${l}</button>`).join("")}</div>`;
+    li.querySelectorAll("button").forEach(b=>b.onclick=()=>{it.s=b.dataset.s;it.manual=true;renderSide();});ul.appendChild(li);});
+  // tlačítko AI
+  const ai=document.getElementById("ai-btn");
+  if(pr&&pr.of){ai.textContent="← Zpět na původní obal";ai.className="btn";ai.onclick=()=>switchProduct(pr.of,v.strana);}
+  else{ai.textContent=pr&&pr.custom&&!pr.navrh?"✦ Vytvořit AI návrh obalu":"✦ Zobrazit AI návrh obalu";ai.className="btn primary";
+    ai.onclick=async()=>{if(pr.custom){ai.disabled=true;ai.textContent="Vytvářím návrh …";try{await makeRedesign(pr.name);}finally{ai.disabled=false;}}switchProduct(pr.navrh,v.strana);};}}
+function afterEdit(v){const pr=prodByName(v.product);if(pr&&pr.custom&&!pr.of)S.comply[v.product]=autoComply(v.product);drawOverlay();renderSide();}
+
+// ================= ovládání =================
+function switchProduct(name,strana){S.product=name;const vs=viewsOf(name);const v=vs.find(x=>x.strana===strana)||vs[0];S.view=v.id;S.sel=null;pending=null;buildTabs();render();}
+function buildTabs(){
+  const pn=document.getElementById("prods");pn.innerHTML="";
+  for(const p of DATA.products){const b=document.createElement("button");b.className="tab prod";b.setAttribute("aria-pressed",S.product===p.name);
+    const sc=productScore(p.name);b.innerHTML=`<b>${esc(p.code)}</b> ${esc(p.name)} <span class="mono">${sc?pct(sc.total)+" %":""}</span>`;b.title=p.full||p.name;
+    b.onclick=()=>switchProduct(p.name,viewById(S.view)?.strana);pn.appendChild(b);}
+  const sn=document.getElementById("sides");sn.innerHTML="";
+  for(const v of viewsOf(S.product)){const b=document.createElement("button");b.className="tab";b.textContent=v.label;b.setAttribute("aria-pressed",S.view===v.id);
+    b.onclick=()=>{S.view=v.id;S.sel=null;pending=null;document.getElementById("newform").hidden=true;buildTabs();render();};sn.appendChild(b);}}
+function buildConds(){const box=document.getElementById("conds");box.innerHTML="";
+  for(const c of [{id:"none",label:"Bez vady"},...COND]){const b=document.createElement("button");b.className="chip";b.textContent=c.label;b.setAttribute("aria-pressed",S.cond===c.id);if(c.desc)b.title=c.desc;
+    b.onclick=()=>{S.cond=c.id;buildConds();render();};box.appendChild(b);}
+  document.getElementById("cond-legend").innerHTML=COND.map(c=>`<dt>${c.short} · ${esc(c.label)}</dt><dd>${esc(c.desc)}</dd>`).join("");}
+function fillProdSelect(){const s=document.getElementById("up-prod");
+  s.innerHTML=`<option value="__new">nový výrobek …</option>`+DATA.products.filter(p=>p.custom&&!p.of).map(p=>`<option ${p.name===S.product?"selected":""}>${esc(p.name)}</option>`).join("");
+  document.getElementById("up-name").closest("label").hidden=s.value!=="__new";}
+
+function rescale(v,val){const r=v.pxmm/val;for(const e of v.elements)if(!e.manual)e.h=+(e.h*r).toFixed(3);v.pxmm=+val.toFixed(4);simCache={};
+  const pr=prodByName(v.product);if(pr&&pr.custom&&!pr.of)S.comply[v.product]=autoComply(v.product);render();}
+document.getElementById("pxmm").onchange=ev=>{const val=parseFloat(ev.target.value);if(val>0)rescale(viewById(S.view),val);};
+document.getElementById("cal-btn").onclick=()=>{S.cal=true;calLine=null;document.getElementById("cal-form").hidden=false;document.getElementById("cal-info").textContent="Táhněte v náhledu úsečku přes známý rozměr (např. výšku obalu nebo šířku čárového kódu).";};
+document.getElementById("cal-x").onclick=()=>{S.cal=false;calLine=null;document.getElementById("cal-form").hidden=true;drawOverlay();};
+document.getElementById("cal-ok").onclick=()=>{if(!calLine)return;const mm=parseFloat(document.getElementById("cal-mm").value);if(!(mm>0))return;
+  const [a,b]=calLine;const L=Math.hypot(b[0]-a[0],b[1]-a[1]);S.cal=false;calLine=null;document.getElementById("cal-form").hidden=true;rescale(viewById(S.view),L/mm);};
+
+let drag=null;
+function evPos(ev){const r=ov.getBoundingClientRect();return [(ev.clientX-r.left)*ov.width/r.width,(ev.clientY-r.top)*ov.height/r.height];}
+ov.addEventListener("pointerdown",ev=>{drag=evPos(ev);ov.setPointerCapture(ev.pointerId);});
+ov.addEventListener("pointermove",ev=>{if(!drag)return;const p=evPos(ev);
+  if(S.cal){calLine=[drag,p];drawOverlay();return;}
+  pending=[Math.min(drag[0],p[0]),Math.min(drag[1],p[1]),Math.max(drag[0],p[0]),Math.max(drag[1],p[1])].map(Math.round);drawOverlay();});
+ov.addEventListener("pointerup",async ev=>{if(!drag)return;const p=evPos(ev);const st=drag;drag=null;
+  if(S.cal){calLine=[st,p];drawOverlay();const L=Math.hypot(p[0]-st[0],p[1]-st[1]);document.getElementById("cal-info").textContent=`Úsečka ${Math.round(L)} px.`;document.getElementById("cal-mm").focus();return;}
+  const b=[Math.min(st[0],p[0]),Math.min(st[1],p[1]),Math.max(st[0],p[0]),Math.max(st[1],p[1])].map(Math.round);
+  const v=viewById(S.view);
+  if(b[2]-b[0]<6||b[3]-b[1]<6){pending=null;const i=v.elements.findIndex(e=>p[0]>=e.box[0]&&p[0]<=e.box[2]&&p[1]>=e.box[1]&&p[1]<=e.box[3]);S.sel=i>=0?i:null;drawOverlay();renderSide();return;}
+  pending=b;drawOverlay();const base=await loadImg(v);const m=measureBox(base,b);pending.m=m;
+  const f=document.getElementById("newform");f.hidden=false;
+  document.getElementById("nf-h").value=(m.glyph/v.pxmm).toFixed(2);document.getElementById("nf-x").checked=false;
+  document.getElementById("nf-info").innerHTML=`text <span class="sw" style="background:${hex(m.fg)}"></span> pozadí <span class="sw" style="background:${hex(m.bg)}"></span> kontrast ${num(cr(m.fg,m.bg))} : 1`;
+  f.scrollIntoView({block:"nearest"});});
+document.getElementById("nf-x").onchange=ev=>{if(!pending)return;const v=viewById(S.view);document.getElementById("nf-h").value=((ev.target.checked?pending.m.xh:pending.m.glyph)/v.pxmm).toFixed(2);};
+document.getElementById("nf-cancel").onclick=()=>{pending=null;document.getElementById("newform").hidden=true;drawOverlay();};
+document.getElementById("nf-add").onclick=()=>{if(!pending)return;const v=viewById(S.view);
+  v.elements.push({text:document.getElementById("nf-text").value||"Prvek",role:document.getElementById("nf-role").value,x:document.getElementById("nf-x").checked,
+    h:parseFloat(document.getElementById("nf-h").value)||1,fg:pending.m.fg,bg:pending.m.bg,box:pending.slice(0,4),manual:true});
+  S.sel=v.elements.length-1;pending=null;document.getElementById("newform").hidden=true;afterEdit(v);};
+
+// nahrávání
+const up=document.getElementById("up");
+document.getElementById("open-up").onclick=()=>{up.hidden=false;fillProdSelect();up.scrollIntoView({behavior:"smooth",block:"start"});};
+document.getElementById("up-close").onclick=()=>{up.hidden=true;};
+document.getElementById("up-prod").onchange=fillProdSelect;
+document.getElementById("up-file").onchange=ev=>{document.getElementById("up-go").disabled=!ev.target.files[0];document.getElementById("up-msg").textContent="";};
+document.getElementById("up-go").onclick=analyze;
+
+// start
+(async()=>{
+  try{DATA=await (await fetch("demo.json")).json();}catch(e){document.getElementById("simnote").textContent="Nepodařilo se načíst ukázková data (demo.json).";return;}
+  for(const [p,items] of Object.entries(DATA.comply)) S.comply[p]=items.map(i=>({...i}));
+  S.product=DATA.products[0].name;S.view=viewsOf(S.product)[0].id;
+  buildConds();buildTabs();fillProdSelect();render();
+  if(location.hash==="#pristupna-etiketa")document.getElementById("legend").scrollIntoView();
+})();
+</script>
+</body>
+</html>
